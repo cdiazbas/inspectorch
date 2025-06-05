@@ -29,5 +29,6 @@ setup(
         "nflows",
         "numpy",
         "matplotlib",
+        "zuko",
     ],
 )
