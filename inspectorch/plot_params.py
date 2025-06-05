@@ -278,14 +278,12 @@ params = {
 'xtick.minor.top': True,
 'xtick.minor.visible': True,
 'xtick.minor.width': 0.8,
-'xtick.top': True,
 'ytick.alignment': 'center_baseline',
 'ytick.color': 'black',
 'ytick.direction': 'in',
 'ytick.labelleft': True,
 'ytick.labelright': False,
 'ytick.labelsize': 17.5,
-'ytick.left': True,
 'ytick.major.left': True,
 'ytick.major.pad': 6.0,
 'ytick.major.right': True,
@@ -297,7 +295,7 @@ params = {
 'ytick.minor.size': 6.0,
 'ytick.minor.visible': True,
 'ytick.minor.width': 0.8,
-'ytick.right': True,
+'ytick.left': True,
 "text.usetex": True,
 "text.latex.preamble": r"\usepackage[T1]{fontenc} \usepackage{newcent} \boldmath", #\usepackage{mathptmx}", # \usepackage{concrete}",
 # 'font.stretch': 'ultra-condensed', 
@@ -306,8 +304,12 @@ params = {
 # 'xtick.labelsize': 15,
 # 'axes.titlesize': 15,    
 # 'axes.labelsize': 15,
-'xtick.direction': 'inout',
-'ytick.direction': 'inout',
+# 'xtick.direction': 'inout',
+# 'ytick.direction': 'inout',
+'xtick.direction': 'out',
+'ytick.direction': 'out',
+'ytick.right': False,
+'xtick.top': False,
 'lines.solid_capstyle': 'round',
 }
 
@@ -317,7 +319,7 @@ def set_params():
     """
     import matplotlib.pyplot as plt
     import matplotlib.pylab as pylab
-    from models.plot_params import params
+    from .plot_params import params
 
     plt.show() # This is necessary to avoid a bug in matplotlib
     default_params = plt.rcParams.copy()
