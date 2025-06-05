@@ -192,3 +192,8 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Nothing inside notebook directories
+#  This is a common pattern to ignore all files inside directories named `notebook` or `notebooks`.
+notebook/*
+notebooks/*
