@@ -176,8 +176,6 @@ def print_summary(model):
 
 
 # =============================================================================
-# NEW WRAPPER CLASS
-# =============================================================================
 class FlowLogProbWrapper(nn.Module):
     """
     A wrapper for nflows.Flow models to make log_prob callable via the forward method,
@@ -188,9 +186,7 @@ class FlowLogProbWrapper(nn.Module):
         self.flow_model = flow_model # This ensures flow_model is registered as a child module
 
     def forward(self, inputs, context=None):
-        # The original code calls model.log_prob(inputs=y), so context is not used.
-        # If your flow's log_prob might use context, you'd pass it here.
-        # For DataParallel, keyword arguments are passed to the wrapped module's forward.
+        # This method is called by DataParallel, which will handle the inputs
         if context is not None:
              return self.flow_model.log_prob(inputs=inputs, context=context)
         return self.flow_model.log_prob(inputs=inputs)
@@ -200,26 +196,32 @@ class FlowLogProbWrapper(nn.Module):
     # For training with DataParallel focusing on log_prob, this is sufficient.
 
 
-
 # =============================================================================
-# MODIFIED train_flow FUNCTION (with refined device logic)
-# =============================================================================
-def train_flow(model, train_loader, learning_rate=1e-3, num_epochs=100, device='cpu'):
+def configure_device(flow_wrapper, device, active_model):
     """
-    Trains a normalizing flow model with flexible device selection.
-    - 'cpu': Uses CPU.
-    - 'cuda': Uses all available GPUs with DataParallel (primary cuda:0).
-    - 'cuda:X': Uses only GPU X (e.g., 'cuda:0').
-    - 'cuda:X,Y,Z': Uses specified GPUs X,Y,Z with DataParallel (primary X).
+    Configures the device placement for a PyTorch model based on the specified device string.
+    This function determines whether to use CPU or CUDA (GPU) devices for model training or inference.
+    It supports flexible device string specifications, including:
+        - 'cpu': Use CPU only.
+        - 'cuda': Use all available GPUs.
+        - 'cuda:X': Use a specific GPU (e.g., 'cuda:0').
+        - 'cuda:X,Y,Z': Use multiple specified GPUs (e.g., 'cuda:0,2,3').
+        - 'cuda:' or 'cuda: ': Treated as 'cuda', i.e., use all GPUs.
+    The function validates GPU availability and indices, falls back to CPU if CUDA is unavailable or invalid indices are provided,
+    and wraps the model in `nn.DataParallel` if multiple GPUs are selected.
+    Args:
+        model (torch.nn.Module): The PyTorch model to be placed on the selected device(s).
+        device (str): Device specification string (e.g., 'cpu', 'cuda', 'cuda:0', 'cuda:0,1').
+    Returns:
+        Tuple[torch.nn.Module, torch.device]:
+            - active_model: The model moved to the selected device(s), possibly wrapped in `nn.DataParallel`.
+            - effective_primary_device: The primary `torch.device` used for computation and output.
+    Notes:
+        - Prints informative messages about device selection and any fallbacks.
+        - Ensures only valid and available GPU indices are used.
+        - Maintains user-specified GPU order for primary device selection.
+        - If an invalid device string is provided, defaults to CPU.
     """
-    original_nflow_model = model
-
-    # 1. Prepare the base model wrapper
-    flow_wrapper = FlowLogProbWrapper(original_nflow_model)
-    active_model = None         # Model (possibly wrapped) for the training loop
-    effective_primary_device = None  # torch.device for data loading and single-GPU model placement
-
-    # 2. Parse device string and configure devices
     if device == 'cpu':
         effective_primary_device = torch.device('cpu')
         print(f"Device: Using CPU for training ({effective_primary_device}).")
@@ -292,13 +294,47 @@ def train_flow(model, train_loader, learning_rate=1e-3, num_epochs=100, device='
         effective_primary_device = torch.device('cpu')
         print(f"Device: String '{device}' not recognized. Falling back to CPU ({effective_primary_device}).")
         active_model = flow_wrapper.to(effective_primary_device)
+    return active_model, effective_primary_device
 
+
+
+# =============================================================================
+def train_flow(model, train_loader, learning_rate=1e-3, num_epochs=100, device='cpu', output_model=None, save_model=False, load_existing=False, extra_noise=1e-4):
+    """
+    Trains a normalizing flow model with flexible device selection.
+    - 'cpu': Uses CPU.
+    - 'cuda': Uses all available GPUs with DataParallel (primary cuda:0).
+    - 'cuda:X': Uses only GPU X (e.g., 'cuda:0').
+    - 'cuda:X,Y,Z': Uses specified GPUs X,Y,Z with DataParallel (primary X).
+    If num_epochs=0 and load_existing=True, loads the existing model from output_model.
+    """
+    original_nflow_model = model
+
+    # If requested, load existing model and skip training
+    if num_epochs == 0 and load_existing and output_model is not None:
+        try:
+            original_nflow_model.load_state_dict(torch.load(output_model, map_location='cpu'))
+            print(f"Loaded existing model from {output_model}")
+            dict_info = {'model': original_nflow_model, 'train_loss_avg': []}
+            return dict_info
+        except FileNotFoundError:
+            print(f"No existing model found at {output_model}.")
+            dict_info = {'model': original_nflow_model, 'train_loss_avg': []}
+            return dict_info
+
+    # 1. Prepare the base model wrapper
+    flow_wrapper = FlowLogProbWrapper(original_nflow_model)
+    active_model = None         # Model (possibly wrapped) for the training loop
+    effective_primary_device = None  # torch.device for data loading and single-GPU model placement
+
+    # 2. Parse device string and configure devices
+    active_model, effective_primary_device = configure_device(flow_wrapper, device, active_model)
+    
     # 3. Optimizer, Data Normalization, Training Loop
     # Parameters of original_nflow_model are accessed through active_model
     optimizer = torch.optim.Adam(active_model.parameters(), lr=learning_rate)
 
     # Ensure dataset_lines is correctly handled (assuming it's tensor or numpy)
-    
     y_std_val = train_loader.dataset.y_std.numpy()
     y_mean_val = train_loader.dataset.y_mean.numpy()
 
@@ -322,6 +358,11 @@ def train_flow(model, train_loader, learning_rate=1e-3, num_epochs=100, device='
             # Move data to the primary device; DataParallel will scatter if active
             y = (splines_tensor.to(effective_primary_device) - y_mean) / y_std
             
+            if extra_noise is not None and extra_noise > 0:
+                # Add small noise to the data to avoid numerical issues
+                noise = torch.normal(0, extra_noise, size=y.shape, device=effective_primary_device)
+                y += noise
+            
             log_probs = active_model(inputs=y) # Call invokes FlowLogProbWrapper.forward
             loss = -log_probs.mean()
             loss.backward()
@@ -337,11 +378,15 @@ def train_flow(model, train_loader, learning_rate=1e-3, num_epochs=100, device='
     print(f'Completed training in {(time.time()-time0)/60.:2.2f} minutes.')
     
     # 4. Unwrap model and return
-    # The parameters of original_nflow_model were updated in-place by the optimizer.
-    # We just need to ensure the original model instance is moved to CPU for general use post-training.
     original_nflow_model.to('cpu') # Move the *original* model state to CPU
     
     dict_info = {'model': original_nflow_model, 'train_loss_avg': train_loss_avg}
+    
+    # If save_model is True, save the model state:
+    if save_model is True and output_model is not None:
+        torch.save(original_nflow_model.state_dict(), output_model)
+        print(f"Model saved to {output_model}")
+    
     return dict_info
 
 
@@ -350,6 +395,7 @@ def nume2string(num):
     """ Convert number to scientific latex mode """
     mantissa, exp = f"{num:.2e}".split("e")
     return mantissa+ " \\times 10^{"+str(int(exp))+"}"
+
 
 # =============================================================================
 def plot_train_loss(train_loss_avg, show_plot=False, save_path=None):
@@ -374,7 +420,7 @@ def plot_train_loss(train_loss_avg, show_plot=False, save_path=None):
 
 
 # =============================================================================
-def check_variables(model, train_loader, plot_variables=[0, 1], figsize=(8, 4)):
+def check_variables(model, train_loader, plot_variables=[0, 1], figsize=(8, 4), device='cpu'):
     """
     Visualizes the distribution of selected latent variables after transforming input data with the model.
 
@@ -387,15 +433,22 @@ def check_variables(model, train_loader, plot_variables=[0, 1], figsize=(8, 4)):
         train_loader (torch.utils.data.DataLoader): DataLoader containing the training dataset with a `lines` attribute.
         plot_variables (list of int, optional): Indices of latent variables to plot. Defaults to [0, 1].
         figsize (tuple, optional): Size of the matplotlib figure. Defaults to (8, 4).
+        device (str or torch.device, optional): Device to use ('cpu', 'cuda', etc.). Defaults to 'cpu'.
 
     Returns:
         None. Displays the plots using matplotlib.
     """
-    y_mean = train_loader.dataset.lines.mean(dim=0).numpy()
-    y_std = train_loader.dataset.lines.std(dim=0).numpy()
-    inputs = (torch.from_numpy(train_loader.dataset.lines.numpy()) - y_mean) / y_std
-    model = model.cpu()
-    zz = model.transform_to_noise(inputs).detach().numpy()
+    # Move model to device
+    model = model.to(device)
+    model.eval()
+
+    y_mean = train_loader.dataset.lines.mean(dim=0)
+    y_std = train_loader.dataset.lines.std(dim=0)
+    inputs = (train_loader.dataset.lines - y_mean) / y_std
+    inputs = inputs.to(device)
+
+    with torch.no_grad():
+        zz = model.transform_to_noise(inputs).cpu().numpy()
 
     # If plot_variables is larger than the number of features, adjust it
     if len(plot_variables) > zz.shape[1]:
