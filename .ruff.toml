@@ -1,0 +1,1 @@
+lint.extend-ignore = ["E702","F601","E402"]
