@@ -12,7 +12,9 @@ import time
 import matplotlib.pyplot as plt
 from tqdm import tqdm  # Ensure tqdm is imported
 from scipy.stats import norm
-
+from einops import rearrange
+import torch.nn.functional as F # <-- Import F
+import warnings # <-- Import warnings
 
 # =============================================================================
 class dot_dict(dict):
@@ -38,58 +40,100 @@ class dot_dict(dict):
 
 
 # =============================================================================
-class custom_dataset(torch.utils.data.Dataset):
+class GeneralizedPatchedDataset(torch.utils.data.Dataset):
     """
-    A custom Dataset class for PyTorch.
-
-    Attributes:
-        lines (numpy.ndarray or pandas.DataFrame or torch.Tensor): The data to be used in the dataset.
-
-    Methods:
-        __init__(lines):
-            Initializes the dataset with the given data.
-
-        __len__():
-            Returns the total number of samples in the dataset.
-
-        __getitem__(index):
-            Generates and returns one sample of data at the given index.
+    A highly flexible PyTorch Dataset that uses named dimensions and einops
+    to extract patches and prepare data for a normalizing flow.
+    Includes automatic padding to preserve spatial/temporal dimensions.
     """
+    def __init__(self, data, dimension_string, primary_variables, patch_config=None,
+                 padding=True, padding_mode='reflect'):
+        """
+        Initializes the dataset, performs patch extraction and reshaping.
 
-    def __init__(self, lines):
-        "Initialization"
-        if isinstance(lines, np.ndarray):
-            self.lines = torch.from_numpy(lines).float()
-        elif isinstance(lines, torch.Tensor):
-            self.lines = lines.float()
-        else:  # Fallback for other array-like, e.g., pandas DataFrame
-            try:
-                self.lines = torch.tensor(np.array(lines), dtype=torch.float32)
-            except Exception as e:
-                raise ValueError(
-                    f"Could not convert input 'lines' to a tensor. Error: {e}"
-                )
+        Args:
+            data (torch.Tensor or np.ndarray): The input data tensor.
+            dimension_string (str): A space-separated string of dimension names.
+            primary_variables (list): List of dimension names for the flow's features.
+            patch_config (dict, optional): Configures patching on primary variables.
+            padding (bool, optional): If True, applies padding to preserve the
+                                      number of patches. Defaults to True.
+            padding_mode (str, optional): The padding mode ('reflect', 'replicate', etc.).
+                                          Defaults to 'reflect'.
+        """
+        if not isinstance(data, torch.Tensor):
+            data = torch.from_numpy(data).float()
 
-        print(
-            f"Dataset initialized with {self.lines.shape[0]} samples and {self.lines.shape[1]} features."
-        )
-        print("Computing mean and standard deviation for normalization...")
+        patch_config = patch_config or {}
+        all_dims = dimension_string.split()
+
+        if data.dim() != len(all_dims):
+            raise ValueError(f"Data tensor has {data.dim()} dims, but "
+                             f"dimension_string defines {len(all_dims)}.")
+
+        # 1. Determine the role of each dimension
+        patch_dims = [d for d in primary_variables if d in patch_config]
+        feature_dims = [d for d in primary_variables if d not in patch_config]
+        sample_dims = [d for d in all_dims if d not in primary_variables]
+
+        # 2. Permute data to group dimensions by role (others, then patchable)
+        # This makes the unfolding process predictable.
+        other_dims = sample_dims + feature_dims
+        permute_pattern = f"{' '.join(all_dims)} -> {' '.join(other_dims)} {' '.join(patch_dims)}"
+        permuted_data = rearrange(data, permute_pattern)
+
+
+        # 3. Iteratively unfold the patchable dimensions
+        unfolded_data = permuted_data
+        num_other_dims = len(other_dims)
+        for i, dim_name in enumerate(patch_dims):
+            axis_to_unfold = num_other_dims + i
+            size = patch_config[dim_name]['size']
+            stride = patch_config[dim_name].get('stride', 1)
+            unfolded_data = unfolded_data.unfold(axis_to_unfold, size, stride)
+            
+        # 4. Construct the final rearrangement pattern to create the patches
+        # The shape of unfolded_data is now: (*other_dims, *num_patches, *patch_sizes)
+        sample_str = ' '.join(sample_dims)
+        feature_str = ' '.join(feature_dims)
+        num_patches_str = ' '.join([f'n_{d}' for d in patch_dims])
+        patch_size_str = ' '.join([f'p_{d}' for d in patch_dims])
+        
+        input_pattern = f"{sample_str} {feature_str} {num_patches_str} {patch_size_str}"
+        output_pattern = f"-> ({sample_str} {num_patches_str}) ({feature_str} {patch_size_str})"
+        
+        self.patches = rearrange(unfolded_data, f"{input_pattern} {output_pattern}")
+
+        print(f"Dataset initialized with {self.patches.shape[0]} samples.")
+        print(f"Each sample is a flattened vector of size {self.patches.shape[1]}.")
+
         # Compute mean and std for normalization
-        self.y_mean = self.lines.mean(dim=0)
-        self.y_std = self.lines.std(dim=0)
-
-        if self.lines.shape[1] == 1:
-            print(
-                "Warning: Dataset has only one feature. Coupling transforms will not work."
-            )
+        self.y_mean = self.patches.mean(dim=0)
+        self.y_std = self.patches.std(dim=0)
+        if (self.y_std == 0).any():
+            self.y_std[self.y_std == 0] = 1.0
+            
+        self.shape = self.patches.shape
+        self.flow_dim = self.patches.shape[1]
 
     def __len__(self):
-        "Denotes the total number of samples"
-        return self.lines.shape[0]
+        return self.patches.shape[0]
 
     def __getitem__(self, index):
-        "Generates one sample of data"
-        return self.lines[index, :]
+        return self.patches[index]
+
+    def get_normalization_stats(self):
+        return {'mean': self.y_mean, 'std': self.y_std}
+
+    def set_normalization_stats(self, stats):
+        self.y_mean = stats['mean']
+        self.y_std = stats['std']
+    
+    def normalized_patches(self):
+        """
+        Returns the normalized patches.
+        """
+        return (self.patches - self.y_mean) / self.y_std
 
 
 # =============================================================================
@@ -137,6 +181,9 @@ def masked_piecewise_rational_quadratic_autoregressive_transform(
 def masked_umnn_autoregressive_transform(
     input_size, hidden_size, num_blocks=1, activation=F.elu
 ):
+    """
+    An unconstrained monotonic neural networks autoregressive layer that transforms the variables.
+    """
     from nflows.transforms.autoregressive import MaskedUMNNAutoregressiveTransform
 
     return MaskedUMNNAutoregressiveTransform(
@@ -152,7 +199,7 @@ def masked_umnn_autoregressive_transform(
 # =============================================================================
 def create_linear_transform(param_dim):
     """
-    Creates a composite linear transformation.
+    Creates a composite simple linear transformation with a random permutation.
     """
     return transforms.CompositeTransform(
         [
@@ -163,36 +210,14 @@ def create_linear_transform(param_dim):
 
 
 # =============================================================================
-from nflows.transforms.base import Transform
-
-
-class LearnableBiasTransform(Transform, nn.Module):
-    def __init__(self, input_size):
-        super().__init__()
-        self.bias = nn.Parameter(torch.zeros(input_size))
-        self.input_size = input_size
-
-    def forward(self, inputs, context=None):
-        return inputs + self.bias, torch.zeros(inputs.shape[0], device=inputs.device)
-
-    def inverse(self, inputs, context=None):
-        return inputs - self.bias, torch.zeros(inputs.shape[0], device=inputs.device)
-
-
-# =============================================================================
-# Replace LinearTransformWithBias with this in the transform chain
-def create_linear_transform2(param_dim):
-    """
-    Creates a linear transform with permutation, LU factorization, and a
-    learnable bias (properly registered).
-    """
-    return transforms.CompositeTransform(
-        [
-            transforms.RandomPermutation(features=param_dim),
-            transforms.LULinear(param_dim, identity_init=True),
-            LearnableBiasTransform(param_dim),
-        ]
-    )
+def create_linear_transform_withActNorm(input_size):
+    """Creates a linear transform with ActNorm, permutation, LU factorization, and a learnable bias."""
+    return transforms.CompositeTransform([
+        transforms.ActNorm(features=input_size),
+        transforms.RandomPermutation(features=input_size),
+        transforms.LULinear(input_size, identity_init=True)
+        # Optionally, you can add a learnable bias here if desired
+    ])
 
 
 # =============================================================================
@@ -572,30 +597,24 @@ def check_variables(
     model, train_loader, plot_variables=[0, 1], figsize=(8, 4), device="cpu"
 ):
     """
-    Visualizes the distribution of selected latent variables after transforming
-    input data with the model.
-
-    This function standardizes the input data using the mean and standard deviation from the training dataset,
-    applies the model's `transform_to_noise` method to obtain latent representations, and plots histograms of
-    the specified latent variables. Each histogram is overlaid with a standard normal distribution for comparison.
+    Plots histograms of selected latent variables after transforming the input data with the model.
 
     Args:
-        model (torch.nn.Module): The model with a `transform_to_noise` method for mapping inputs to latent space.
-        train_loader (torch.utils.data.DataLoader): DataLoader containing the training dataset with a `lines` attribute.
-        plot_variables (list of int, optional): Indices of latent variables to plot. Defaults to [0, 1].
-        figsize (tuple, optional): Size of the matplotlib figure. Defaults to (8, 4).
-        device (str or torch.device, optional): Device to use ('cpu', 'cuda', etc.). Defaults to 'cpu'.
+        model: The trained model with a `transform_to_noise` method.
+        train_loader: DataLoader containing the training dataset.
+        plot_variables: List of variable indices to plot.
+        figsize: Size of the plot.
+        device: Device to use ('cpu', 'cuda', etc.).
 
-    Returns:
-        None. Displays the plots using matplotlib.
+    Shows the distribution of each selected variable compared to a standard normal.
     """
     # Move model to device
     model = model.to(device)
     model.eval()
 
-    y_mean = train_loader.dataset.lines.mean(dim=0)
-    y_std = train_loader.dataset.lines.std(dim=0)
-    inputs = (train_loader.dataset.lines - y_mean) / y_std
+    y_mean = train_loader.dataset.patches.mean(dim=0)
+    y_std = train_loader.dataset.patches.std(dim=0)
+    inputs = (train_loader.dataset.patches - y_mean) / y_std
     inputs = inputs.to(device)
 
     with torch.no_grad():
