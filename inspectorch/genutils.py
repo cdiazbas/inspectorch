@@ -2,6 +2,9 @@ import platform
 import socket
 import torch
 import os
+from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 def device_info():
@@ -46,11 +49,6 @@ def save_json(args, filename):
         os.makedirs(os.path.dirname(filename))
     with open(filename, "w") as f:
         json.dump(args_dict, f, indent=4)
-
-
-from matplotlib.colors import LinearSegmentedColormap
-import matplotlib.pyplot as plt
-import numpy as np
 
 
 def create_spectral_to_white_cmap():
