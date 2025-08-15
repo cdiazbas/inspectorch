@@ -197,3 +197,4 @@ cython_debug/
 #  This is a common pattern to ignore all files inside directories named `notebook` or `notebooks`.
 notebook/*
 notebooks/*
+example/models/*

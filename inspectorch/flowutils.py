@@ -111,6 +111,8 @@ class GeneralizedPatchedDataset(torch.utils.data.Dataset):
             f"-> ({sample_str} {num_patches_str}) ({feature_str} {patch_size_str})"
         )
 
+        self.input_pattern = input_pattern
+        self.output_pattern = output_pattern
         self.patches = rearrange(unfolded_data, f"{input_pattern} {output_pattern}")
 
         print(f"Dataset initialized with {self.patches.shape[0]} samples.")
