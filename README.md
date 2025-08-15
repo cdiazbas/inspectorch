@@ -16,26 +16,22 @@ cd inspectorch
 pip install .
 ```
 
-You may also want to install in editable mode for development:
-
-```bash
-pip install -e .
-```
-
 ## Usage
 
-- Prepare your data in the expected format (see `example/example.py`).
-- Run the example script to train and evaluate the normalizing flow:
+- Prepare your data in the expected format (see `example`).
 
-```bash
-python inspectorch/example/example.py
-```
-
-- Modify the script or use the provided API to analyze your own datasets.
 
 ## Citation
 
 If you use Inspectorch in your research, please cite the corresponding paper (arXiv:X).
+
+# For development purposes
+
+```bash
+git clone https://github.com/cdiazbas/sst_align
+cd sst_align
+pip install -e .
+```
 
 
 ## Pre-commit hooks (only for development)
