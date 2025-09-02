@@ -238,7 +238,7 @@ def create_linear_transform_withActNorm(input_size):
 
 
 # =============================================================================
-def create_flow(
+def create_flow_prqct(
     input_size=1, num_layers=5, hidden_features=32, num_bins=8, flow_type="PRQCT"
 ):
     """
@@ -256,6 +256,29 @@ def create_flow(
     transformsi.append(create_linear_transform(param_dim=input_size))
     transformflow = CompositeTransform(transformsi)
     return Flow(transformflow, base_dist)
+
+
+# =============================================================================
+def create_flow(
+    input_size=1, num_layers=5, hidden_features=32, num_bins=8, flow_type="PRQCT"
+):
+    """
+    Creates a flow model.
+    """
+    if input_size > 1.5:
+        return create_flow_prqct(
+            input_size=input_size,
+            num_layers=num_layers,
+            hidden_features=hidden_features,
+            num_bins=num_bins,
+        )
+    else:
+        return create_flow_autoregressive(
+            input_size=input_size,
+            num_layers=num_layers,
+            hidden_features=hidden_features,
+            num_bins=num_bins,
+        )
 
 
 # =============================================================================

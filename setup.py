@@ -34,5 +34,7 @@ setup(
         "nflows",
         "numpy",
         "matplotlib",
+        "einops",
+        "scipy",
     ],
 )
