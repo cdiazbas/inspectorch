@@ -9,7 +9,7 @@ With current and future solar telescopes, the Sun is observed in unprecedented d
 
 ## Installation
 
-Create a conda environment (recommended):
+Create a conda environment (recommended) if you don't have one already:
 
 ```bash
 conda create -n inspectorch python
