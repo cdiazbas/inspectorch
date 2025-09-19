@@ -198,3 +198,8 @@ cython_debug/
 notebook/*
 notebooks/*
 example/models/*
+
+
+# Docs:
+mkdocs*
+docs/*
