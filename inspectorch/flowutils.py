@@ -53,6 +53,7 @@ class GeneralizedPatchedDataset(torch.utils.data.Dataset):
         dim_names,
         feature_dims,
         patch_config=None,
+        dim_reduction=None,
     ):
         """
         Initializes the dataset, performs patch extraction and reshaping.
@@ -61,7 +62,8 @@ class GeneralizedPatchedDataset(torch.utils.data.Dataset):
             data (torch.Tensor or np.ndarray): The input data tensor.
             dim_names (str): A space-separated string of dimension names.
             feature_dims (list): List of dimension names for the flow's features.
-            patch_config (dict, optional): Configures patching on primary variables.
+            patch_config (dict, optional): Configures patching on primary variables, e.g, {'x': {'size': 5, 'stride': 1}, 'y': {'size': 5, 'stride': 1}} or in the temporal case  {'t': {'size': 11, 'stride': 1}}
+            dim_reduction (dict, optional): Dimensionality reduction config, e.g. {'method': 'pca', 'n_components': 10}
         """
         if not isinstance(data, torch.Tensor):
             data = torch.from_numpy(data.astype(np.float32, copy=False)).float()
@@ -117,6 +119,11 @@ class GeneralizedPatchedDataset(torch.utils.data.Dataset):
 
         print(f"Dataset initialized with {self.patches.shape[0]} samples.")
         print(f"Each sample is a flattened vector of size {self.patches.shape[1]}.")
+
+        if dim_reduction is not None:
+            import inspectorch.dimreduction as dr
+
+            self.patches = dr.apply_dim_reduction(self.patches, dim_reduction)
 
         # Compute mean and std for normalization
         self.y_mean = self.patches.mean(dim=0)
@@ -238,6 +245,12 @@ def create_linear_transform_withActNorm(input_size):
 
 
 # =============================================================================
+class CustomFlow(Flow):
+    def __init__(self, *args, training_loss=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.training_loss = None
+
+# =============================================================================
 def create_flow_prqct(
     input_size=1, num_layers=5, hidden_features=32, num_bins=8, flow_type="PRQCT"
 ):
@@ -255,7 +268,7 @@ def create_flow_prqct(
         )
     transformsi.append(create_linear_transform(param_dim=input_size))
     transformflow = CompositeTransform(transformsi)
-    return Flow(transformflow, base_dist)
+    return CustomFlow(transformflow, base_dist)
 
 
 # =============================================================================
@@ -478,6 +491,7 @@ def configure_device(flow_wrapper, device, active_model):
             f"Device: String '{device}' not recognized. Falling back to CPU ({effective_primary_device})."
         )
         active_model = flow_wrapper.to(effective_primary_device)
+    
     return active_model, effective_primary_device
 
 
@@ -601,6 +615,9 @@ def train_flow(
     if save_model is True and output_model is not None:
         torch.save(original_nflow_model.state_dict(), output_model)
         print(f"Model saved to {output_model}")
+
+    # Save the train_loss_avg inside the model for future reference
+    original_nflow_model.training_loss = train_loss_avg
 
     return dict_info
 
