@@ -39,7 +39,7 @@ If you use Inspectorch in your research, please cite the corresponding paper (ar
 
 ```bash
 git clone https://github.com/cdiazbas/inspectorch
-cd sst_align
+cd inspectorch
 pip install -e .
 ```
 
