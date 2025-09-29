@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "inspectorch"
+description = "Efficient rare event exploration with normalizing flows"
+authors = [
+  { name = "Carlos Jose Diaz Baso" }
+]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.9"
+keywords = ["normalizing flows", "rare events", "machine learning"]
+
+dependencies = [
+    "torch",
+    "nflows",
+    "numpy",
+    "matplotlib",
+    "einops",
+    "scipy",
+    "ipykernel",
+    "jupyterlab",
+    "tqdm",
+]
+
+# version will be taken from git tags
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/cdiazbas/inspectorch"
+
+[tool.setuptools]
+packages = ["inspectorch"]
+
+[tool.setuptools_scm]
+version_scheme = "no-guess-dev"  # or "post-release"
+local_scheme = "node-and-date"
+fallback_version = "1.0.dev0"

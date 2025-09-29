@@ -245,30 +245,151 @@ def create_linear_transform_withActNorm(input_size):
 
 
 # =============================================================================
-class CustomFlow(Flow):
-    def __init__(self, *args, training_loss=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.training_loss = None
+class Density_estimator(nn.Module):
+    """
+    Density_estimator is a PyTorch module for density estimation using
+    normalizing flows.
 
-# =============================================================================
-def create_flow_prqct(
-    input_size=1, num_layers=5, hidden_features=32, num_bins=8, flow_type="PRQCT"
-):
+    Attributes:
+        flow_model (nn.Module): The flow-based model for density estimation.
+        y_mean (float or np.ndarray): Mean of the target variable, used for normalization.
+        y_std (float or np.ndarray): Standard deviation of the target variable, used for normalization.
+        training_loss (list): List to store training loss values during flow training.
+
+    Methods:
+        create_flow(input_size, num_layers, hidden_features, num_bins):
+            Initializes the flow_model with the specified architecture.
+
+        log_prob(inputs, dataset_normalization=True):
+            Computes the log-probability of the inputs under the flow model.
+            If dataset_normalization is True, normalizes the inputs before evaluation.
+
+        print_summary():
+            Prints a summary of the flow model architecture.
+
+        check_variables(train_loader, plot_variables=[0, 1], figsize=(8, 4), device="cpu", batch_size=500000, rel_size=0.1):
+            Checks and optionally plots variables from the training data for diagnostics.
+
+        train_flow(train_loader, learning_rate=1e-3, num_epochs=100, device="cpu", output_model=None, save_model=False, load_existing=False, extra_noise=1e-4):
+            Trains the flow model using the provided training data loader and hyperparameters.
+            Stores training loss in self.training_loss.
+
+        plot_train_loss(show_plot=False, save_path=None):
+            Plots the training loss curve. Optionally displays or saves the plot.
     """
-    Creates a flow model.
-    """
-    base_dist = nflows.distributions.StandardNormal((input_size,))
-    transformsi = []
-    for i in range(num_layers):
-        transformsi.append(create_linear_transform(param_dim=input_size))
-        transformsi.append(
-            piecewise_rational_quadratic_coupling_transform(
-                i, input_size, hidden_features, num_bins=num_bins
+
+    def __init__(self):
+        super(Density_estimator, self).__init__()
+        # Flow model will be created later
+        self.flow_model = None
+        self.y_mean = None
+        self.y_std = None
+
+        # Extra attributes to store information
+        self.training_loss = []
+
+    def create_flow(self, input_size, num_layers, hidden_features, num_bins):
+        """
+        Creates a flow-based model for density estimation or generative
+        modeling.
+
+        Args:
+            input_size (int): The dimensionality of the input data.
+            num_layers (int): Number of layers in the flow model.
+            hidden_features (int): Number of hidden units in each layer.
+            num_bins (int): Number of bins used for the flow's transformation (e.g., in rational quadratic splines).
+
+        Returns:
+            nn.Module: A flow-based model instance configured with the specified parameters.
+        """
+        self.flow_model = create_flow(input_size, num_layers, hidden_features, num_bins)
+
+    def log_prob(self, inputs, dataset_normalization=True):
+        """
+        Computes the log probability of the input data using the flow model.
+
+        Args:
+            inputs: The input data to evaluate. If `dataset_normalization` is True,
+                it is expected to have a `normalized_patches()` method that returns
+                the normalized data.
+            dataset_normalization (bool, optional): If True, applies dataset normalization
+                to the inputs before computing log probability. Defaults to True.
+
+        Returns:
+            numpy.ndarray: The log probabilities of the inputs as a NumPy array.
+        """
+        if dataset_normalization:
+            return (
+                self.flow_model.log_prob(inputs.normalized_patches()).detach().numpy()
             )
+
+        return self.flow_model.log_prob(inputs).detach().numpy()
+
+    def print_summary(self):
+        """
+        Prints a summary of the flow model.
+
+        This method calls the `print_summary` function, passing the `flow_model` attribute
+        as an argument. The summary typically includes key information about the flow model,
+        such as its structure, parameters, and configuration.
+        """
+        print_summary(self.flow_model)
+
+    def check_variables(
+        self,
+        train_loader,
+        plot_variables=[0, 1],
+        figsize=(8, 4),
+        device="cpu",
+        batch_size=500000,
+        rel_size=0.1,
+    ):
+        check_variables(
+            self.flow_model,
+            train_loader,
+            plot_variables,
+            figsize,
+            device,
+            batch_size,
+            rel_size,
         )
-    transformsi.append(create_linear_transform(param_dim=input_size))
-    transformflow = CompositeTransform(transformsi)
-    return CustomFlow(transformflow, base_dist)
+
+    def train_flow(
+        self,
+        train_loader,
+        learning_rate=1e-3,
+        num_epochs=100,
+        device="cpu",
+        output_model=None,
+        save_model=False,
+        load_existing=False,
+        extra_noise=1e-4,
+    ):
+        self.y_mean = train_loader.dataset.y_mean
+        self.y_std = train_loader.dataset.y_std
+
+        train_flow(
+            self.flow_model,
+            train_loader,
+            learning_rate,
+            num_epochs,
+            device,
+            output_model,
+            save_model,
+            load_existing,
+            extra_noise,
+            self.training_loss,
+        )
+
+    def plot_train_loss(self, show_plot=False, save_path=None):
+        """
+        Plots the training loss over epochs.
+
+        Args:
+            show_plot (bool, optional): If True, displays the plot. Defaults to False.
+            save_path (str or None, optional): If provided, saves the plot to the specified file path. Defaults to None.
+        """
+        plot_train_loss(self.training_loss, show_plot, save_path)
 
 
 # =============================================================================
@@ -292,6 +413,27 @@ def create_flow(
             hidden_features=hidden_features,
             num_bins=num_bins,
         )
+
+
+# =============================================================================
+def create_flow_prqct(
+    input_size=1, num_layers=5, hidden_features=32, num_bins=8, flow_type="PRQCT"
+):
+    """
+    Creates a flow model.
+    """
+    base_dist = nflows.distributions.StandardNormal((input_size,))
+    transformsi = []
+    for i in range(num_layers):
+        transformsi.append(create_linear_transform(param_dim=input_size))
+        transformsi.append(
+            piecewise_rational_quadratic_coupling_transform(
+                i, input_size, hidden_features, num_bins=num_bins
+            )
+        )
+    transformsi.append(create_linear_transform(param_dim=input_size))
+    transformflow = CompositeTransform(transformsi)
+    return Flow(transformflow, base_dist)
 
 
 # =============================================================================
@@ -491,7 +633,7 @@ def configure_device(flow_wrapper, device, active_model):
             f"Device: String '{device}' not recognized. Falling back to CPU ({effective_primary_device})."
         )
         active_model = flow_wrapper.to(effective_primary_device)
-    
+
     return active_model, effective_primary_device
 
 
@@ -506,6 +648,7 @@ def train_flow(
     save_model=False,
     load_existing=False,
     extra_noise=1e-4,
+    train_loss_avg=[],
 ):
     """
     Trains a normalizing flow model with flexible device selection.
@@ -559,7 +702,6 @@ def train_flow(
         y_mean_val, device=effective_primary_device, dtype=torch.float32
     )
 
-    train_loss_avg = []
     time0 = time.time()
     active_model.train()  # Set model to training mode
 
@@ -601,6 +743,7 @@ def train_flow(
 
         current_epoch_avg_loss = np.mean(np.array(train_loss))
         train_loss_avg.append(current_epoch_avg_loss)
+
         # Update tqdm postfix with average loss and device info
         t.set_postfix_str(f"Avg: {current_epoch_avg_loss:.4f}")
 
@@ -609,17 +752,12 @@ def train_flow(
     # 4. Unwrap model and return
     original_nflow_model.to("cpu")  # Move the *original* model state to CPU
 
-    dict_info = {"model": original_nflow_model, "train_loss_avg": train_loss_avg}
-
     # If save_model is True, save the model state:
     if save_model is True and output_model is not None:
         torch.save(original_nflow_model.state_dict(), output_model)
         print(f"Model saved to {output_model}")
 
-    # Save the train_loss_avg inside the model for future reference
-    original_nflow_model.training_loss = train_loss_avg
-
-    return dict_info
+    return
 
 
 # =================================================================

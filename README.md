@@ -21,7 +21,7 @@ Clone the repository and install the required dependencies (automatically with p
 ```bash
 git clone https://github.com/cdiazbas/inspectorch
 cd inspectorch
-python -m pip install .
+pip install .
 ```
 
 
