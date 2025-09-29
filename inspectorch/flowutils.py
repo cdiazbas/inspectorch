@@ -323,7 +323,7 @@ class Density_estimator(nn.Module):
                 self.flow_model.log_prob(inputs.normalized_patches()).detach().numpy()
             )
 
-        return self.flow_model.log_prob(inputs).detach().numpy()
+        return self.flow_model.log_prob(inputs.patches).detach().numpy()
 
     def print_summary(self):
         """
@@ -363,7 +363,7 @@ class Density_estimator(nn.Module):
         output_model=None,
         save_model=False,
         load_existing=False,
-        extra_noise=1e-4,
+        extra_noise=1e-3,
     ):
         self.y_mean = train_loader.dataset.y_mean
         self.y_std = train_loader.dataset.y_std
