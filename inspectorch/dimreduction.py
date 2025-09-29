@@ -1,6 +1,4 @@
-import numpy as np
 import torch
-import torch.nn as nn
 from sklearn.decomposition import PCA
 
 DEFAULT_N_COMPONENTS = 10
@@ -8,7 +6,8 @@ DEFAULT_N_COMPONENTS = 10
 
 def apply_dim_reduction(data, dim_reduction):
     """
-    Applies dimensionality reduction to the input data using the specified method.
+    Applies dimensionality reduction to the input data using the specified
+    method.
 
     Parameters:
         data (array-like): The input data to be reduced.
@@ -23,9 +22,9 @@ def apply_dim_reduction(data, dim_reduction):
     Raises:
         ValueError: If an unknown dimensionality reduction method is specified.
     """
-    method = dim_reduction.get('method', 'pca')
-    if method == 'pca':
-        n_components = dim_reduction.get('n_components', DEFAULT_N_COMPONENTS)
+    method = dim_reduction.get("method", "pca")
+    if method == "pca":
+        n_components = dim_reduction.get("n_components", DEFAULT_N_COMPONENTS)
         reducer = PCAReducer(n_components)
         reduced_data = reducer.fit_transform(data)
         return reduced_data
@@ -35,7 +34,8 @@ def apply_dim_reduction(data, dim_reduction):
 
 class PCAReducer:
     """
-    A wrapper class for performing Principal Component Analysis (PCA) for dimensionality reduction.
+    A wrapper class for performing Principal Component Analysis (PCA) for
+    dimensionality reduction.
 
     Args:
         n_components (int): Number of principal components to retain.
@@ -67,6 +67,7 @@ class PCAReducer:
             Returns:
                 torch.Tensor: Transformed data with reduced dimensions (output is always a torch.Tensor, regardless of input type).
     """
+
     def __init__(self, n_components):
         self.n_components = n_components
         # Initialize PCA model
@@ -81,7 +82,9 @@ class PCAReducer:
 
     def transform(self, X):
         if not self.fitted:
-            raise RuntimeError("PCA model is not fitted yet. Call 'fit' before 'transform'.")
+            raise RuntimeError(
+                "PCA model is not fitted yet. Call 'fit' before 'transform'."
+            )
         if isinstance(X, torch.Tensor):
             X = X.detach().cpu().numpy()
         return torch.tensor(self.model.transform(X), dtype=torch.float32)
@@ -91,6 +94,3 @@ class PCAReducer:
             X = X.detach().cpu().numpy()
         self.fit(X)
         return self.transform(X)
-
-
-
