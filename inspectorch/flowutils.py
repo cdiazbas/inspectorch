@@ -401,8 +401,9 @@ class Density_estimator(nn.Module):
         load_existing=False,
         extra_noise=1e-3,
     ):
-        self.y_mean = train_loader.dataset.y_mean
-        self.y_std = train_loader.dataset.y_std
+        if train_loader is not None:
+            self.y_mean = train_loader.dataset.y_mean
+            self.y_std = train_loader.dataset.y_std
 
         train_flow(
             self.flow_model,
@@ -728,8 +729,8 @@ def train_flow(
     optimizer = torch.optim.Adam(active_model.parameters(), lr=learning_rate)
 
     # Ensure dataset_lines is correctly handled (assuming it's tensor or numpy)
-    y_std_val = train_loader.dataset.y_std.numpy()
-    y_mean_val = train_loader.dataset.y_mean.numpy()
+    y_std_val = active_model.y_std.numpy()
+    y_mean_val = active_model.y_mean.numpy()
 
     y_std = torch.tensor(
         y_std_val, device=effective_primary_device, dtype=torch.float32
@@ -782,6 +783,10 @@ def train_flow(
 
         # Update tqdm postfix with average loss and device info
         t.set_postfix_str(f"Avg: {current_epoch_avg_loss:.4f}")
+        
+        # Save intermediate model every epoch:
+        if save_model and output_model is not None:
+            torch.save(original_nflow_model.state_dict(), output_model)
 
     print(f"Completed training in {(time.time() - time0) / 60.0:2.2f} minutes.")
 
