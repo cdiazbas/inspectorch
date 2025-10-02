@@ -39,6 +39,42 @@ class dot_dict(dict):
 
 
 # =============================================================================
+def nanstd(tensor, dim=None, keepdim=False):
+    """
+    Computes the standard deviation of a tensor, ignoring NaN values.
+
+    Args:
+        tensor (torch.Tensor): Input tensor.
+        dim (int or tuple of ints, optional): Dimension or dimensions along which to compute the standard deviation.
+        keepdim (bool, optional): Whether the output tensor has dim retained or not.
+
+    Returns:
+        torch.Tensor: The standard deviation of the input tensor, ignoring NaN values.
+    """
+    output = nanvar(tensor, dim=dim, keepdim=keepdim)
+    output = output.sqrt()
+    return output
+
+
+# =============================================================================
+def nanvar(tensor, dim=None, keepdim=False):
+    """
+    Computes the variance of a tensor, ignoring NaN values.
+
+    Args:
+        tensor (torch.Tensor): Input tensor.
+        dim (int or tuple of ints, optional): Dimension or dimensions along which to compute the variance.
+        keepdim (bool, optional): Whether the output tensor has dim retained or not. Default is False.
+
+    Returns:
+        torch.Tensor: The variance of the tensor, ignoring NaN values.
+    """
+    tensor_mean = tensor.nanmean(dim=dim, keepdim=True)
+    output = (tensor - tensor_mean).square().nanmean(dim=dim, keepdim=keepdim)
+    return output
+
+
+# =============================================================================
 class GeneralizedPatchedDataset(torch.utils.data.Dataset):
     """
     A highly flexible PyTorch Dataset that uses named dimensions and einops to
@@ -126,8 +162,8 @@ class GeneralizedPatchedDataset(torch.utils.data.Dataset):
             self.patches = dr.apply_dim_reduction(self.patches, dim_reduction)
 
         # Compute mean and std for normalization
-        self.y_mean = self.patches.mean(dim=0)
-        self.y_std = self.patches.std(dim=0)
+        self.y_mean = torch.nanmean(self.patches, dim=0)
+        self.y_std = nanstd(self.patches, dim=0)
         if (self.y_std == 0).any():
             self.y_std[self.y_std == 0] = 1.0
 
@@ -823,23 +859,47 @@ def check_variables(
     y_std = train_loader.dataset.y_std.to(device)
 
     # Evaluate only rel_size % of the dataset using the train_loader, with extra shuffle
-    zz = []
-    total_batches = int(np.ceil(rel_size * len(train_loader)))
-    all_batches = []
+    # Process in batches - more memory efficient
+    zz_batches = []
+    total_samples_needed = int(rel_size * len(train_loader.dataset))
+    samples_collected = 0
+
     with torch.no_grad():
         for batch in train_loader:
+            if samples_collected >= total_samples_needed:
+                break
+
             if not isinstance(batch, torch.Tensor):
                 batch = torch.from_numpy(batch).float()
-            all_batches.append(batch)
-        # Shuffle the batches before selecting a subset
-        np.random.shuffle(all_batches)
-        for i, batch in enumerate(all_batches):
-            if i >= total_batches:
-                break
-            batch = batch.to(device)
-            zz_batch = model.transform_to_noise((batch - y_mean) / y_std).cpu().numpy()
-            zz.append(zz_batch)
-    zz = np.concatenate(zz)
+
+            # Remove samples with NaNs
+            valid_mask = ~torch.isnan(batch).any(dim=1)
+            batch_clean = batch[valid_mask]
+
+            if batch_clean.size(0) == 0:
+                continue
+
+            # Only take what we need
+            samples_to_take = min(
+                batch_clean.size(0), total_samples_needed - samples_collected
+            )
+            batch_subset = batch_clean[:samples_to_take].to(device)
+
+            # Transform this batch
+            zz_batch = (
+                model.transform_to_noise((batch_subset - y_mean) / y_std)
+                .cpu()
+                .detach()
+                .numpy()
+            )
+            zz_batches.append(zz_batch)
+
+            samples_collected += samples_to_take
+
+    if not zz_batches:
+        raise ValueError("No valid samples found after NaN removal!")
+
+    zz = np.concatenate(zz_batches)
 
     # If plot_variables is larger than the number of features, adjust it
     if len(plot_variables) > zz.shape[1]:

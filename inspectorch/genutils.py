@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+# =============================================================================
 def device_info():
     """
     Prints information about the current machine and available CUDA devices.
@@ -30,6 +31,7 @@ def device_info():
         print("CUDA is not available. Using CPU.")
 
 
+# =============================================================================
 def save_json(args, filename):
     """
     Saves the given arguments as a JSON file.
@@ -51,6 +53,7 @@ def save_json(args, filename):
         json.dump(args_dict, f, indent=4)
 
 
+# =============================================================================
 def create_spectral_to_white_cmap():
     """
     Creates a colormap that uses the Red-Orange-Yellow transition from the
