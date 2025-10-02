@@ -19,7 +19,7 @@ conda activate inspectorch
 Clone the repository and install the required dependencies (automatically with pip):
 
 ```bash
-git clone https://github.com/cdiazbas/inspectorch
+git clone git@github.com:cdiazbas/inspectorch.git
 cd inspectorch
 pip install .
 ```
@@ -38,7 +38,7 @@ If you use Inspectorch in your research, please cite the corresponding paper (ar
 ## For development purposes
 
 ```bash
-git clone https://github.com/cdiazbas/inspectorch
+git clone git@github.com:cdiazbas/inspectorch.git
 cd inspectorch
 pip install -e .
 ```
