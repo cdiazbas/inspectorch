@@ -156,6 +156,8 @@ class GeneralizedPatchedDataset(torch.utils.data.Dataset):
         print(f"Dataset initialized with {self.patches.shape[0]} samples.")
         print(f"Each sample is a flattened vector of size {self.patches.shape[1]}.")
 
+        print(f"Input pattern: {self.input_pattern} -> {self.output_pattern}")
+
         if dim_reduction is not None:
             import inspectorch.dimreduction as dr
 
@@ -340,7 +342,9 @@ class Density_estimator(nn.Module):
         """
         self.flow_model = create_flow(input_size, num_layers, hidden_features, num_bins)
 
-    def log_prob(self, inputs, dataset_normalization=True):
+    def log_prob(
+        self, inputs, dataset_normalization=True, batch_size=100000, device="cpu"
+    ):
         """
         Computes the log probability of the input data using the flow model.
 
@@ -355,11 +359,29 @@ class Density_estimator(nn.Module):
             numpy.ndarray: The log probabilities of the inputs as a NumPy array.
         """
         if dataset_normalization:
-            return (
-                self.flow_model.log_prob(inputs.normalized_patches()).detach().numpy()
-            )
+            inputs = inputs.normalized_patches()
 
-        return self.flow_model.log_prob(inputs.patches).detach().numpy()
+        else:
+            inputs = inputs.patches
+
+        results = []
+        print(f"Using {device} for log_prob computation.")
+        # Move model to the specified device
+        self.flow_model.to(device)
+        self.flow_model.eval()  # Set model to evaluation mode
+
+        from tqdm import tqdm
+
+        for i in tqdm(range(0, inputs.shape[0], batch_size)):
+            batch = inputs[i : i + batch_size].to(
+                next(self.flow_model.parameters()).device
+            )
+            results.append(self.flow_model.log_prob(batch).detach().cpu().numpy())
+
+        # Move model back to CPU if needed
+        self.flow_model.to("cpu")
+
+        return np.concatenate(results)
 
     def print_summary(self):
         """
@@ -416,6 +438,9 @@ class Density_estimator(nn.Module):
             load_existing,
             extra_noise,
             self.training_loss,
+            {"mean": self.y_mean, "std": self.y_std}
+            if self.y_mean is not None
+            else None,
         )
 
     def plot_train_loss(self, show_plot=False, save_path=None):
@@ -686,6 +711,7 @@ def train_flow(
     load_existing=False,
     extra_noise=1e-4,
     train_loss_avg=[],
+    normalization_stats=None,
 ):
     """
     Trains a normalizing flow model with flexible device selection.
@@ -729,8 +755,17 @@ def train_flow(
     optimizer = torch.optim.Adam(active_model.parameters(), lr=learning_rate)
 
     # Ensure dataset_lines is correctly handled (assuming it's tensor or numpy)
-    y_std_val = active_model.y_std.numpy()
-    y_mean_val = active_model.y_mean.numpy()
+    if train_loader is None:
+        y_std_val = train_loader.y_std.numpy()
+        y_mean_val = train_loader.y_mean.numpy()
+    else:
+        if normalization_stats is not None:
+            y_std_val = normalization_stats["std"].numpy()
+            y_mean_val = normalization_stats["mean"].numpy()
+        else:
+            raise ValueError(
+                "Normalization stats must be provided if train_loader is None."
+            )
 
     y_std = torch.tensor(
         y_std_val, device=effective_primary_device, dtype=torch.float32
@@ -783,7 +818,7 @@ def train_flow(
 
         # Update tqdm postfix with average loss and device info
         t.set_postfix_str(f"Avg: {current_epoch_avg_loss:.4f}")
-        
+
         # Save intermediate model every epoch:
         if save_model and output_model is not None:
             torch.save(original_nflow_model.state_dict(), output_model)
@@ -832,7 +867,7 @@ def plot_train_loss(train_loss_avg, show_plot=False, save_path=None):
 
 
 # =============================================================================
-def check_variables(
+def check_variables_loader(
     model,
     train_loader,
     plot_variables=[0, 1],
@@ -869,8 +904,17 @@ def check_variables(
     total_samples_needed = int(rel_size * len(train_loader.dataset))
     samples_collected = 0
 
+    # DataLoader iterator
+    dataloader_iter = iter(train_loader)
+
     with torch.no_grad():
-        for batch in train_loader:
+        while samples_collected < total_samples_needed:
+            try:
+                batch = next(dataloader_iter)
+            except StopIteration:
+                print("DataLoader exhausted, breaking...")
+                break
+
             if samples_collected >= total_samples_needed:
                 break
 
@@ -882,6 +926,7 @@ def check_variables(
             batch_clean = batch[valid_mask]
 
             if batch_clean.size(0) == 0:
+                print("Empty batch after NaN removal, continuing...")
                 continue
 
             # Only take what we need
@@ -912,6 +957,119 @@ def check_variables(
             f"Warning: plot_variables length {len(plot_variables)} exceeds number of features {zz.shape[1]}. Adjusting to available features."
         )
         plot_variables = list(range(zz.shape[1]))
+
+    fig, axes = plt.subplots(1, len(plot_variables), figsize=figsize, sharey=True)
+    if len(plot_variables) == 1:
+        axes = [axes]
+    for i, var in enumerate(plot_variables):
+        ax = axes[i]
+        ax.hist(zz[:, var], bins=100, density=True, alpha=0.5, label=f"Variable {var}")
+        ax.set_title(f"Variable {var}")
+        ax.set_xlabel("Value")
+        if i == 0:
+            ax.set_ylabel("Density")
+        x = np.linspace(zz[:, var].min(), zz[:, var].max(), 100)
+        ax.plot(x, norm.pdf(x, 0, 1), "k--", label="Normal Gaussian")
+        ax.locator_params(axis="y", nbins=6)
+    plt.tight_layout()
+
+
+# =============================================================================
+def check_variables(
+    model,
+    train_loader,
+    plot_variables=[0, 1],
+    figsize=(8, 4),
+    device="cpu",
+    batch_size=50000,  # Now this parameter is actually used!
+    rel_size=0.1,
+):
+    """
+    Plots histograms of selected latent variables after transforming the input
+    data with the model.
+
+    Args:
+        model: The trained model with a `transform_to_noise` method.
+        train_loader: DataLoader containing the training dataset.
+        plot_variables: List of variable indices to plot.
+        figsize: Size of the plot.
+        device: Device to use ('cpu', 'cuda', etc.).
+        batch_size (int): Batch size for processing samples. Defaults to 50000.
+        rel_size (float, optional): Fraction of the dataset to use for plotting (between 0 and 1). Defaults to 0.1.
+
+    Shows the distribution of each selected variable compared to a standard normal.
+    """
+    import time
+
+    # Move model to device
+    time.time()
+    model = model.to(device)
+    model.eval()
+
+    y_mean = train_loader.dataset.y_mean.to(device)
+    y_std = train_loader.dataset.y_std.to(device)
+
+    # Calculate total samples needed
+    dataset_size = len(train_loader.dataset)
+    total_samples_needed = int(rel_size * dataset_size)
+
+    # Step 1: Randomly sample indices
+    time.time()
+    random_indices = np.random.randint(0, dataset_size, size=total_samples_needed)
+
+    # Step 2: Process in batches
+    zz_batches = []
+    num_batches = (
+        total_samples_needed + batch_size - 1
+    ) // batch_size  # Ceiling division
+
+    with torch.no_grad():
+        for batch_idx in range(num_batches):
+            time.time()
+
+            # Get batch indices
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, total_samples_needed)
+            batch_indices = random_indices[start_idx:end_idx]
+
+            # Step 3: Collect samples for this batch - VECTORIZED VERSION
+
+            # Get all samples at once using advanced indexing
+            batch_tensor = train_loader.dataset.patches[batch_indices]
+
+            # Vectorized NaN check - check which samples have NaNs
+            nan_mask = torch.isnan(batch_tensor).any(dim=1)
+            valid_samples = batch_tensor[~nan_mask]
+
+            if valid_samples.size(0) == 0:
+                print("No valid samples in this batch, skipping...")
+                continue
+
+            # Move to device
+            valid_samples = valid_samples.to(device)
+
+            # Step 4: Transform this batch
+            zz_batch = (
+                model.transform_to_noise((valid_samples - y_mean) / y_std)
+                .cpu()
+                .detach()
+                .numpy()
+            )
+            zz_batches.append(zz_batch)
+
+    if not zz_batches:
+        raise ValueError("No valid samples found after NaN removal!")
+
+    # Step 5: Concatenate results
+    zz = np.concatenate(zz_batches)
+
+    # Step 6: Plot results
+    if len(plot_variables) > zz.shape[1]:
+        print(
+            f"Warning: plot_variables length {len(plot_variables)} exceeds number of features {zz.shape[1]}. Adjusting to available features."
+        )
+        plot_variables = list(range(zz.shape[1]))
+
     fig, axes = plt.subplots(1, len(plot_variables), figsize=figsize, sharey=True)
     if len(plot_variables) == 1:
         axes = [axes]
