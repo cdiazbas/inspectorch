@@ -9,7 +9,7 @@ With current and future solar telescopes, the Sun is observed in unprecedented d
 
 ## Installation
 
-Create a conda environment (recommended) if you don't have one already:
+Create a conda environment (recommended) if you don't have one already. Important: use Python 3.9 - 3.13, since you will need to install PyTorch (see below). You can force a specific Python version with `python=3.x` in the command below.
 
 ```bash
 conda create -n inspectorch python

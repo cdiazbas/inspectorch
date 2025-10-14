@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torch.utils.data
-import inspectorch.flowutils as flowutils
+from inspectorch import flowutils
 from einops import rearrange
 from inspectorch.plot_params import set_params
 from inspectorch import genutils
@@ -27,17 +27,15 @@ genutils.device_info()
 # --- Data loading and preprocessing ---
 # Read the compressed Hinode data from file
 with np.load("hinode_data.npz") as npzfile:
-    data = npzfile["data"]
+    # The notebook example normalizes by a fixed factor (186.0)
+    data = npzfile["data"] / 186.0
     wav = npzfile["wav"]
     pixel_size = npzfile["pixel_size"] * 3.0
 
 ny, nwav, nx = data.shape
 print(f"Data shape: {data.shape}")
 
-# Normalize data by quiet sun (QS) median value for consistent intensity scaling
-qs = np.median(data[:, 0, :])
-data = data / qs
-average = np.mean(data[:, :, :], axis=(0, 2))
+# Data does not need any further normalization here (handled in the notebook example)
 
 
 # --- Dataset preparation ---
@@ -81,25 +79,29 @@ train_loader = torch.utils.data.DataLoader(
 
 
 # Build the normalizing flow model for density estimation
-model = flowutils.create_flow(
+model = flowutils.Density_estimator()
+model.create_flow(
     input_size=dataset.flow_dim, num_layers=5, hidden_features=32, num_bins=8
 )
 
-
 # Print model summary for inspection
-flowutils.print_summary(model)
+model.print_summary()
 
 # Visualize data distribution before training
-flowutils.check_variables(model, train_loader, plot_variables=[0, 1], figsize=(8, 4))
-plt.savefig("models/variables_pre_training.png", dpi=300, bbox_inches="tight")
+model.check_variables(
+    train_loader,
+    plot_variables=[0, 1],  # Which variables to plot from your feature set
+    figsize=(8, 4),
+    rel_size=0.1,  # It only checks 10% of the data for speed
+)
 
 
 # ## Training the density estimator
 
-# Set training hyperparameters
+# Set training hyperparameters (match the notebook example)
 args.learning_rate = 1e-3
-args.num_epochs = 10
-args.device = "cpu"
+args.num_epochs = 15
+args.device = "cuda:0"
 args.output_model = "models/nflow_model_hinode_mini.pth"
 args.save_model = True
 args.load_existing = True
@@ -107,10 +109,9 @@ args.load_existing = True
 # Save training arguments for reproducibility
 genutils.save_json(args, "models/nflow_args_hinode_mini.json")
 
-# Train the normalizing flow model
-dict_info = flowutils.train_flow(
-    model,
-    train_loader,
+# Train the normalizing flow model using the Density_estimator API
+model.train_flow(
+    train_loader=train_loader,
     learning_rate=args.learning_rate,
     num_epochs=args.num_epochs,
     device=args.device,
@@ -119,16 +120,18 @@ dict_info = flowutils.train_flow(
     load_existing=args.load_existing,
 )
 
-
 # Plot training loss to monitor convergence
-flowutils.plot_train_loss(dict_info["train_loss_avg"])
-plt.savefig("models/train_loss.png", dpi=300, bbox_inches="tight")
+model.plot_train_loss()
+plt.savefig("models/training_loss.png", dpi=300, bbox_inches="tight")
 
-
-# Visualize data distribution after training
-flowutils.check_variables(model, train_loader, plot_variables=[0, 1], figsize=(8, 4))
-plt.savefig("models/variables_post_training.png", dpi=300, bbox_inches="tight")
-
+# Visualize data distribution after training (notebook style)
+model.check_variables(
+    train_loader,
+    plot_variables=[0, 1],  # Which variables to plot from your feature set
+    figsize=(8, 4),
+    rel_size=0.1,  # It only checks 10% of the data for speed
+)
+plt.savefig("models/post_training_variables.png", dpi=300, bbox_inches="tight")
 
 # Compute log-probabilities for all data points
 log_prob = model.log_prob(inputs=dataset.normalized_patches()).detach().numpy()
