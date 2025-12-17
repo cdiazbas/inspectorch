@@ -26,7 +26,9 @@ def device_info():
         print(f"Operating system: {platform.system()} {platform.release()}")
         print(f"Number of GPUs: {torch.cuda.device_count()}")
         for i in range(torch.cuda.device_count()):
-            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+            allocated = torch.cuda.memory_allocated(i) / 1024**3
+            total = torch.cuda.get_device_properties(i).total_memory / 1024**3
+            print(f"GPU {i}: {torch.cuda.get_device_name(i)} -", f"Memory: {allocated:.2f}/{total:.2f} GB")
     else:
         print("CUDA is not available. Using CPU.")
 
