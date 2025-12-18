@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# Anomaly detection using normalizing flows
+# Anomaly detection using Flow Matching
 
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torch.utils.data
-from inspectorch import flowutils
+from inspectorch import mflowutils
 from einops import rearrange
 from inspectorch.plot_params import set_params
 from inspectorch import genutils
@@ -41,13 +41,16 @@ print(f"Data shape: {data.shape}")
 # --- Dataset preparation ---
 
 # Wrap the data in a patched dataset for spectral analysis
-dataset = flowutils.GeneralizedPatchedDataset(
+dataset = mflowutils.GeneralizedPatchedDataset(
     data,
     dim_names="y wav x",  # Define the dimensions of the dataset
     feature_dims=["wav"],  # Specify the feature dimensions for spectral analysis
 )
 
 print(f"Data (patched) shape: {dataset.shape}")
+
+# Compute average spectrum for reference
+average = np.mean(data, axis=(0, 2))
 
 # --- Visualization of raw data ---
 
@@ -63,13 +66,13 @@ cb = plt.colorbar(pad=0.02, shrink=1.0, aspect=40)
 cb.set_label("Intensity [a.u.]")
 plt.locator_params(axis="x", nbins=3)
 plt.locator_params(axis="y", nbins=5)
-plt.savefig("models/raw_data.png", dpi=300, bbox_inches="tight")
+plt.savefig("models/raw_data_mflow.png", dpi=300, bbox_inches="tight")
 
 
 # --- Data preparation for training ---
 
 # Create a dot_dict for training arguments
-args = flowutils.dot_dict()
+args = mflowutils.dot_dict()
 args.batch_size = 10000
 
 # Create a DataLoader for efficient batch training
@@ -78,10 +81,15 @@ train_loader = torch.utils.data.DataLoader(
 )
 
 
-# Build the normalizing flow model for density estimation
-model = flowutils.Density_estimator()
+# Build the Flow Matching model for density estimation
+model = mflowutils.FlowMatching_Density_estimator()
 model.create_flow(
-    input_size=dataset.flow_dim, num_layers=5, hidden_features=32, num_bins=8
+    input_size=dataset.flow_dim,
+    num_layers=5,
+    hidden_features=32,
+    scheduler_n=3.0,  # Polynomial convex scheduler (flow matching specific)
+    architecture="MLP",  # Options: "MLP" or "ResNet"
+    time_embedding_dim=32,
 )
 
 # Print model summary for inspection
@@ -94,22 +102,24 @@ model.check_variables(
     figsize=(8, 4),
     rel_size=0.1,  # It only checks 10% of the data for speed
 )
+plt.savefig("models/pre_training_variables_mflow.png", dpi=300, bbox_inches="tight")
 
 
 # ## Training the density estimator
 
-# Set training hyperparameters (match the notebook example)
+# Set training hyperparameters
 args.learning_rate = 1e-3
 args.num_epochs = 15
-args.device = "cuda:0"
-args.output_model = "models/nflow_model_hinode_mini.pth"
+args.device = "cuda:0"  # Supports multi-GPU: "cuda:0,1,2"
+args.output_model = "models/mflow_model_hinode_mini.pth"
 args.save_model = True
 args.load_existing = True
+args.extra_noise = 0.0  # Additional noise for regularization (0.0 = no extra noise)
 
 # Save training arguments for reproducibility
-genutils.save_json(args, "models/nflow_args_hinode_mini.json")
+genutils.save_json(args, "models/mflow_args_hinode_mini.json")
 
-# Train the normalizing flow model using the Density_estimator API
+# Train the Flow Matching model using the FlowMatching_Density_estimator API
 model.train_flow(
     train_loader=train_loader,
     learning_rate=args.learning_rate,
@@ -118,23 +128,34 @@ model.train_flow(
     output_model=args.output_model,
     save_model=args.save_model,
     load_existing=args.load_existing,
+    extra_noise=args.extra_noise,
 )
 
 # Plot training loss to monitor convergence
 model.plot_train_loss()
-plt.savefig("models/training_loss.png", dpi=300, bbox_inches="tight")
+plt.savefig("models/training_loss_mflow.png", dpi=300, bbox_inches="tight")
 
-# Visualize data distribution after training (notebook style)
+# Visualize data distribution after training
 model.check_variables(
     train_loader,
     plot_variables=[0, 1],  # Which variables to plot from your feature set
     figsize=(8, 4),
     rel_size=0.1,  # It only checks 10% of the data for speed
 )
-plt.savefig("models/post_training_variables.png", dpi=300, bbox_inches="tight")
+plt.savefig("models/post_training_variables_mflow.png", dpi=300, bbox_inches="tight")
 
 # Compute log-probabilities for all data points
-log_prob = model.log_prob(inputs=dataset)
+# Note: Flow matching uses ODE integration, so we can choose solver parameters
+log_prob = model.log_prob(
+    inputs=dataset,
+    dataset_normalization=True,
+    batch_size=1000,
+    device=args.device,
+    solver_method="dopri5",  # Options: 'dopri5', 'rk4', 'euler', 'midpoint'
+    atol=1e-5,
+    rtol=1e-5,
+    exact_divergence=False,  # Use Hutchinson estimator for speed (True = exact but slower)
+)
 
 
 # The model evaluated all the dataset, so we need to reshape the log_prob
@@ -158,13 +179,13 @@ im = ax.imshow(
     extent=extent,
 )
 cb = fig.colorbar(im, ax=ax, pad=0.02, shrink=1.0, aspect=40)
-cb.set_label(r"$\log\,p_\phi(\mathbf{x})$")
+cb.set_label(r"$\log\,p_\phi(\mathbf{x})$ (Flow Matching)")
 plt.minorticks_on()
 plt.xlabel("X [arcsec]")
 plt.ylabel("Y [arcsec]")
 plt.locator_params(axis="x", nbins=3)
 plt.locator_params(axis="y", nbins=5)
-plt.savefig("models/logprob_map.png", dpi=300, bbox_inches="tight")
+plt.savefig("models/logprob_map_mflow.png", dpi=300, bbox_inches="tight")
 
 
 # --- Visualization of least common spectra ---
@@ -174,9 +195,6 @@ nplots = 5
 # Find indices of least probable spectra
 idxs = np.argsort(log_prob)[:nplots]
 print(f"Least common spectra indices: {idxs}")
-
-# Calculate average spectrum for reference
-average = np.mean(data, axis=(0, 2))
 
 fig, ax = plt.subplots(1, 5, figsize=(20, 16 / 4 * 1), sharex=True, sharey=True)
 ax = ax.flatten()
@@ -247,4 +265,37 @@ for axes in ax.flat:
     ticks = axes.get_xticks()
     axes.set_xticks(ticks)  # Ensure ticks are fixed
     axes.set_xticklabels([f"{tick:.{num_decimals}f}" for tick in ticks])
-plt.savefig("models/least_common_spectra.png", dpi=300, bbox_inches="tight")
+plt.savefig("models/least_common_spectra_mflow.png", dpi=300, bbox_inches="tight")
+
+
+# --- Optional: Generate samples from the learned distribution ---
+print("\nGenerating samples from the learned Flow Matching model...")
+num_samples = 100
+samples = model.sample(
+    num_samples=num_samples,
+    device=args.device,
+    solver_method="dopri5",
+    atol=1e-5,
+    rtol=1e-5,
+)
+
+# Plot some generated samples
+fig, ax = plt.subplots(1, 5, figsize=(20, 16 / 4 * 1), sharex=True, sharey=True)
+ax = ax.flatten()
+for i in range(min(5, num_samples)):
+    sample = samples[i].numpy()
+    ax[i].plot(wav / 10, sample / np.max(sample), color="C0")
+    ax[i].plot(wav / 10, average / np.max(average), ls="-", color="black", alpha=0.2)
+    ax[i].set_title(f"Generated Sample {i+1}", fontsize=16)
+    
+    if i == 0:
+        ax[i].set_ylabel("Intensity [a.u.]")
+    ax[i].set_xlabel("Wavelength [nm]")
+    ax[i].set_ylim(0.2, 1.1)
+
+plt.suptitle("Samples Generated by Flow Matching Model", fontsize=20, y=1.02)
+plt.savefig("models/generated_samples_mflow.png", dpi=300, bbox_inches="tight")
+
+print("\nFlow Matching analysis complete!")
+print(f"Models saved to: {args.output_model}")
+print(f"All plots saved to the models/ directory with '_mflow' suffix")

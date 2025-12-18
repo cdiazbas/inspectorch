@@ -28,7 +28,11 @@ pip install .
 
 ## Usage
 
-Explore the example script in `inspectorch/example/example.py` to see how to use Inspectorch with your own data. The script includes comments to guide you through the process.
+Inspectorch includes two flow-based methods:
+1. **Normalizing Flows** (for accuracy): Recommended for high precision density estimation. See `inspectorch/example/example.py`.
+2. **Flow Matching** (for scalability): Recommended for larger datasets or higher dimensions where scalability is a concern. See `inspectorch/example/example_mflow.py`.
+
+Explore these scripts to see how to use Inspectorch with your own data. The scripts include comments to guide you through the process.
 
 
 ## Citation

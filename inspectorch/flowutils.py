@@ -12,184 +12,17 @@ import time
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.stats import norm
-from einops import rearrange
+from . import genutils as gu
 
 
 # =============================================================================
-class dot_dict(dict):
-    """
-    A dictionary subclass that allows for attribute-style access.
-
-    This class extends the built-in dictionary to allow accessing keys as attributes.
-    It overrides the __getattr__, __setattr__, and __delattr__ methods to provide
-    this functionality.
-
-    Example:
-        d = DotDict({'key': 'value'})
-        print(d.key)  # Outputs: value
-        d.new_key = 'new_value'
-        print(d['new_key'])  # Outputs: new_value
-        del d.key
-        print(d)  # Outputs: {'new_key': 'new_value'}
-    """
-
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
-
-
+# Utility Functions (Reused from flowutils.py)
 # =============================================================================
-def nanstd(tensor, dim=None, keepdim=False):
-    """
-    Computes the standard deviation of a tensor, ignoring NaN values.
-
-    Args:
-        tensor (torch.Tensor): Input tensor.
-        dim (int or tuple of ints, optional): Dimension or dimensions along which to compute the standard deviation.
-        keepdim (bool, optional): Whether the output tensor has dim retained or not.
-
-    Returns:
-        torch.Tensor: The standard deviation of the input tensor, ignoring NaN values.
-    """
-    output = nanvar(tensor, dim=dim, keepdim=keepdim)
-    output = output.sqrt()
-    return output
-
-
-# =============================================================================
-def nanvar(tensor, dim=None, keepdim=False):
-    """
-    Computes the variance of a tensor, ignoring NaN values.
-
-    Args:
-        tensor (torch.Tensor): Input tensor.
-        dim (int or tuple of ints, optional): Dimension or dimensions along which to compute the variance.
-        keepdim (bool, optional): Whether the output tensor has dim retained or not. Default is False.
-
-    Returns:
-        torch.Tensor: The variance of the tensor, ignoring NaN values.
-    """
-    tensor_mean = tensor.nanmean(dim=dim, keepdim=True)
-    output = (tensor - tensor_mean).square().nanmean(dim=dim, keepdim=keepdim)
-    return output
-
-
-# =============================================================================
-class GeneralizedPatchedDataset(torch.utils.data.Dataset):
-    """
-    A highly flexible PyTorch Dataset that uses named dimensions and einops to
-    extract patches and prepare data for a normalizing flow.
-
-    Includes automatic padding to preserve spatial/temporal dimensions.
-    """
-
-    def __init__(
-        self,
-        data,
-        dim_names,
-        feature_dims,
-        patch_config=None,
-        dim_reduction=None,
-    ):
-        """
-        Initializes the dataset, performs patch extraction and reshaping.
-
-        Args:
-            data (torch.Tensor or np.ndarray): The input data tensor.
-            dim_names (str): A space-separated string of dimension names.
-            feature_dims (list): List of dimension names for the flow's features.
-            patch_config (dict, optional): Configures patching on primary variables, e.g, {'x': {'size': 5, 'stride': 1}, 'y': {'size': 5, 'stride': 1}} or in the temporal case  {'t': {'size': 11, 'stride': 1}}
-            dim_reduction (dict, optional): Dimensionality reduction config, e.g. {'method': 'pca', 'n_components': 10}
-        """
-        if not isinstance(data, torch.Tensor):
-            data = torch.from_numpy(data.astype(np.float32, copy=False)).float()
-
-        patch_config = patch_config or {}
-        all_dims = dim_names.split()
-
-        if data.dim() != len(all_dims):
-            raise ValueError(
-                f"Data tensor has {data.dim()} dims, but "
-                f"dim_names defines {len(all_dims)}."
-            )
-        # 0. Save the dimension of each variable:
-        self.data_dims = {f"n{d}": data.shape[i] for i, d in enumerate(all_dims)}
-
-        # 1. Determine the role of each dimension
-        sample_dims = [d for d in all_dims if d not in feature_dims]
-        patch_dims = [d for d in feature_dims if d in patch_config]
-        non_patch_feature_dims = [d for d in feature_dims if d not in patch_config]
-
-        # 2. Permute data to group dimensions by role (others, then patchable)
-        # This makes the unfolding process predictable.
-        other_dims = sample_dims + non_patch_feature_dims
-        permute_pattern = (
-            f"{' '.join(all_dims)} -> {' '.join(other_dims)} {' '.join(patch_dims)}"
-        )
-        permuted_data = rearrange(data, permute_pattern)
-
-        # 3. Iteratively unfold the patchable dimensions
-        unfolded_data = permuted_data
-        num_other_dims = len(other_dims)
-        for i, dim_name in enumerate(patch_dims):
-            axis_to_unfold = num_other_dims + i
-            size = patch_config[dim_name]["size"]
-            stride = patch_config[dim_name].get("stride", 1)
-            unfolded_data = unfolded_data.unfold(axis_to_unfold, size, stride)
-
-        # 4. Construct the final rearrangement pattern to create the patches
-        # The shape of unfolded_data is now: (*other_dims, *num_patches, *patch_sizes)
-        sample_str = " ".join(sample_dims)
-        feature_str = " ".join(non_patch_feature_dims)
-        num_patches_str = " ".join([f"n_{d}" for d in patch_dims])
-        patch_size_str = " ".join([f"p_{d}" for d in patch_dims])
-
-        input_pattern = f"{sample_str} {feature_str} {num_patches_str} {patch_size_str}"
-        output_pattern = (
-            f"-> ({sample_str} {num_patches_str}) ({feature_str} {patch_size_str})"
-        )
-
-        self.input_pattern = input_pattern
-        self.output_pattern = output_pattern
-        self.patches = rearrange(unfolded_data, f"{input_pattern} {output_pattern}")
-
-        print(f"Dataset initialized with {self.patches.shape[0]} samples.")
-        print(f"Each sample is a flattened vector of size {self.patches.shape[1]}.")
-
-        print(f"Input pattern: {self.input_pattern} -> {self.output_pattern}")
-
-        if dim_reduction is not None:
-            import inspectorch.dimreduction as dr
-
-            self.patches = dr.apply_dim_reduction(self.patches, dim_reduction)
-
-        # Compute mean and std for normalization
-        self.y_mean = torch.nanmean(self.patches, dim=0)
-        self.y_std = nanstd(self.patches, dim=0)
-        if (self.y_std == 0).any():
-            self.y_std[self.y_std == 0] = 1.0
-
-        self.shape = self.patches.shape
-        self.flow_dim = self.patches.shape[1]
-
-    def __len__(self):
-        return self.patches.shape[0]
-
-    def __getitem__(self, index):
-        return self.patches[index]
-
-    def get_normalization_stats(self):
-        return {"mean": self.y_mean, "std": self.y_std}
-
-    def set_normalization_stats(self, stats):
-        self.y_mean = stats["mean"]
-        self.y_std = stats["std"]
-
-    def normalized_patches(self):
-        """
-        Returns the normalized patches.
-        """
-        return (self.patches - self.y_mean) / self.y_std
+dot_dict = gu.dot_dict
+nanstd = gu.nanstd
+nanvar = gu.nanvar
+nume2string = gu.nume2string
+GeneralizedPatchedDataset = gu.GeneralizedPatchedDataset
 
 
 # =============================================================================
@@ -525,7 +358,7 @@ def print_summary(model):
     pytorch_total_params_grad = sum(
         p.numel() for p in model.parameters() if p.requires_grad
     )
-    print("Total params to optimize:", pytorch_total_params_grad)
+    print(f"Total params to optimize: {pytorch_total_params_grad:,}")
 
 
 # =============================================================================
@@ -553,150 +386,8 @@ class FlowLogProbWrapper(nn.Module):
 
 
 # =============================================================================
-def configure_device(flow_wrapper, device, active_model):
-    """
-    Configures the device placement for a PyTorch model based on the specified
-    device string. This function determines whether to use CPU or CUDA (GPU)
-    devices for model training or inference.
-
-    It supports flexible device string specifications, including:
-        - 'cpu': Use CPU only.
-        - 'cuda': Use all available GPUs.
-        - 'cuda:X': Use a specific GPU (e.g., 'cuda:0').
-        - 'cuda:X,Y,Z': Use multiple specified GPUs (e.g., 'cuda:0,2,3').
-        - 'cuda:' or 'cuda: ': Treated as 'cuda', i.e., use all GPUs.
-    The function validates GPU availability and indices, falls back to CPU if CUDA is unavailable or invalid indices are provided,
-    and wraps the model in `nn.DataParallel` if multiple GPUs are selected.
-    Args:
-        model (torch.nn.Module): The PyTorch model to be placed on the selected device(s).
-        device (str): Device specification string (e.g., 'cpu', 'cuda', 'cuda:0', 'cuda:0,1').
-    Returns:
-        Tuple[torch.nn.Module, torch.device]:
-            - active_model: The model moved to the selected device(s), possibly wrapped in `nn.DataParallel`.
-            - effective_primary_device: The primary `torch.device` used for computation and output.
-    Notes:
-        - Prints informative messages about device selection and any fallbacks.
-        - Ensures only valid and available GPU indices are used.
-        - Maintains user-specified GPU order for primary device selection.
-        - If an invalid device string is provided, defaults to CPU.
-    """
-    if device == "cpu":
-        effective_primary_device = torch.device("cpu")
-        print(f"Device: Using CPU for training ({effective_primary_device}).")
-        active_model = flow_wrapper.to(effective_primary_device)
-    elif device.startswith("cuda"):
-        if not torch.cuda.is_available():
-            effective_primary_device = torch.device("cpu")
-            print(
-                "Device: CUDA specified, but torch.cuda.is_available() is False. Falling back to CPU."
-            )
-            active_model = flow_wrapper.to(effective_primary_device)
-        else:
-            num_gpus_available = torch.cuda.device_count()
-            if num_gpus_available == 0:
-                effective_primary_device = torch.device("cpu")
-                print(
-                    "Device: CUDA available, but no GPUs detected (torch.cuda.device_count() == 0). Falling back to CPU."
-                )
-                active_model = flow_wrapper.to(effective_primary_device)
-            else:  # CUDA and GPUs are available
-                parts = device.split(":", 1)
-                # gpu_selection_str is None for 'cuda', or '0' or '0,2,3' for 'cuda:0' or 'cuda:0,2,3'
-                # .strip() handles cases like 'cuda: ' which should default to all GPUs
-                gpu_selection_str = (
-                    parts[1].strip() if len(parts) > 1 and parts[1].strip() else None
-                )
-
-                target_gpu_ids_for_dp = []  # Integer GPU IDs for DataParallel's device_ids
-
-                if (
-                    gpu_selection_str is None
-                ):  # Case: 'cuda' (or 'cuda:' or 'cuda: ') -> use all available
-                    target_gpu_ids_for_dp = list(range(num_gpus_available))
-                    print(
-                        f"Device: '{device}' interpreted as using all {num_gpus_available} available GPUs: {target_gpu_ids_for_dp}."
-                    )
-                else:  # Case: 'cuda:X' or 'cuda:X,Y,Z'
-                    try:
-                        parsed_indices_str = gpu_selection_str.split(",")
-                        temp_parsed_gpu_ids = []
-                        for s_idx_str in parsed_indices_str:
-                            s_idx_clean = s_idx_str.strip()
-                            if not s_idx_clean:
-                                continue  # Handles 'cuda:0,', 'cuda:,1' or 'cuda:,'
-                            gpu_id = int(s_idx_clean)
-                            if 0 <= gpu_id < num_gpus_available:
-                                if (
-                                    gpu_id not in temp_parsed_gpu_ids
-                                ):  # Keep order, ensure uniqueness
-                                    temp_parsed_gpu_ids.append(gpu_id)
-                            else:
-                                print(
-                                    f"Warning: Specified GPU ID {gpu_id} is out of range (0-{num_gpus_available - 1}). Ignoring."
-                                )
-
-                        if (
-                            not temp_parsed_gpu_ids
-                        ):  # If all specified were invalid or string was e.g. 'cuda:,'
-                            raise ValueError(
-                                "No valid GPU indices derived from specification."
-                            )
-                        target_gpu_ids_for_dp = temp_parsed_gpu_ids
-                        print(
-                            f"Device: '{device}'. Validated target GPU IDs (maintaining user order for primary): {target_gpu_ids_for_dp}."
-                        )
-                    except ValueError as e:
-                        print(
-                            f"Warning: Could not parse GPU IDs from '{gpu_selection_str}' (Error: {e}). Falling back to CPU."
-                        )
-                        effective_primary_device = torch.device("cpu")
-                        active_model = flow_wrapper.to(
-                            effective_primary_device
-                        )  # Mark for CPU
-
-                # If GPU path is still viable (active_model not set to CPU fallback yet)
-                if active_model is None:
-                    if not target_gpu_ids_for_dp:
-                        print(
-                            "Warning: No target GPU indices selected despite CUDA availability. Falling back to CPU."
-                        )
-                        effective_primary_device = torch.device("cpu")
-                        active_model = flow_wrapper.to(effective_primary_device)
-                    else:
-                        primary_gpu_id = target_gpu_ids_for_dp[
-                            0
-                        ]  # First valid GPU is primary
-                        effective_primary_device = torch.device(
-                            f"cuda:{primary_gpu_id}"
-                        )
-
-                        flow_wrapper.to(
-                            effective_primary_device
-                        )  # Move base wrapper to primary device
-
-                        if len(target_gpu_ids_for_dp) > 1:
-                            print(
-                                f"Device: Using DataParallel for GPUs {target_gpu_ids_for_dp}. Primary/Output device: {effective_primary_device}."
-                            )
-                            active_model = nn.DataParallel(
-                                flow_wrapper, device_ids=target_gpu_ids_for_dp
-                            )
-                            # DataParallel's output_device defaults to device_ids[0], matching our effective_primary_device
-                        else:  # Single specified GPU
-                            print(
-                                f"Device: Using single specified GPU: {effective_primary_device}."
-                            )
-                            active_model = (
-                                flow_wrapper  # Already on effective_primary_device
-                            )
-    else:  # Unrecognized device string format
-        effective_primary_device = torch.device("cpu")
-        print(
-            f"Device: String '{device}' not recognized. Falling back to CPU ({effective_primary_device})."
-        )
-        active_model = flow_wrapper.to(effective_primary_device)
-
-    return active_model, effective_primary_device
+# =============================================================================
+configure_device = gu.configure_device
 
 
 # =============================================================================
@@ -746,9 +437,7 @@ def train_flow(
     )
 
     # 2. Parse device string and configure devices
-    active_model, effective_primary_device = configure_device(
-        flow_wrapper, device, active_model
-    )
+    active_model, effective_primary_device = configure_device(flow_wrapper, device)
 
     # 3. Optimizer, Data Normalization, Training Loop
     # Parameters of original_nflow_model are accessed through active_model
@@ -834,15 +523,6 @@ def train_flow(
         print(f"Model saved to {output_model}")
 
     return
-
-
-# =================================================================
-def nume2string(num):
-    """
-    Convert number to scientific latex mode.
-    """
-    mantissa, exp = f"{num:.2e}".split("e")
-    return mantissa + " \\times 10^{" + str(int(exp)) + "}"
 
 
 # =============================================================================
@@ -1075,12 +755,22 @@ def check_variables(
         axes = [axes]
     for i, var in enumerate(plot_variables):
         ax = axes[i]
-        ax.hist(zz[:, var], bins=100, density=True, alpha=0.5, label=f"Variable {var}")
-        ax.set_title(f"Variable {var}")
+        ax.hist(zz[:, var], bins=100, density=True, alpha=0.5, label="Output")
+        ax.set_title(f"Latent variable {var}")
         ax.set_xlabel("Value")
         if i == 0:
             ax.set_ylabel("Density")
-        x = np.linspace(zz[:, var].min(), zz[:, var].max(), 100)
-        ax.plot(x, norm.pdf(x, 0, 1), "k--", label="Normal Gaussian")
+        # Plot standard normal reference
+        x_range = np.linspace(zz[:, var].min(), zz[:, var].max(), 100)
+        ax.plot(
+            x_range,
+            norm.pdf(x_range, 0, 1),
+            "k--",
+            linewidth=2,
+            label=r"$\mathcal{N}(0,1)$",
+        )
+        ax.legend(loc="upper right")
+        ax.grid(alpha=0.3)
+
         ax.locator_params(axis="y", nbins=6)
     plt.tight_layout()
