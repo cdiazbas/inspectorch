@@ -134,7 +134,7 @@ model.check_variables(
 plt.savefig("models/post_training_variables.png", dpi=300, bbox_inches="tight")
 
 # Compute log-probabilities for all data points
-log_prob = model.log_prob(inputs=dataset.normalized_patches()).detach().numpy()
+log_prob = model.log_prob(inputs=dataset)
 
 
 # The model evaluated all the dataset, so we need to reshape the log_prob
@@ -174,6 +174,9 @@ nplots = 5
 # Find indices of least probable spectra
 idxs = np.argsort(log_prob)[:nplots]
 print(f"Least common spectra indices: {idxs}")
+
+# Calculate average spectrum for reference
+average = np.mean(data, axis=(0, 2))
 
 fig, ax = plt.subplots(1, 5, figsize=(20, 16 / 4 * 1), sharex=True, sharey=True)
 ax = ax.flatten()
