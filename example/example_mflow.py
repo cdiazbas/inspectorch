@@ -286,8 +286,8 @@ for i in range(min(5, num_samples)):
     sample = samples[i].numpy()
     ax[i].plot(wav / 10, sample / np.max(sample), color="C0")
     ax[i].plot(wav / 10, average / np.max(average), ls="-", color="black", alpha=0.2)
-    ax[i].set_title(f"Generated Sample {i+1}", fontsize=16)
-    
+    ax[i].set_title(f"Generated Sample {i + 1}", fontsize=16)
+
     if i == 0:
         ax[i].set_ylabel("Intensity [a.u.]")
     ax[i].set_xlabel("Wavelength [nm]")
@@ -298,4 +298,4 @@ plt.savefig("models/generated_samples_mflow.png", dpi=300, bbox_inches="tight")
 
 print("\nFlow Matching analysis complete!")
 print(f"Models saved to: {args.output_model}")
-print(f"All plots saved to the models/ directory with '_mflow' suffix")
+print("All plots saved to the models/ directory with '_mflow' suffix")
