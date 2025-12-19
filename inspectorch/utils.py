@@ -7,6 +7,7 @@ from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.pyplot as plt
 import numpy as np
 
+
 # =============================================================================
 def device_info():
     """

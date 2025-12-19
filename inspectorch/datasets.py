@@ -3,6 +3,7 @@ import torch.utils.data
 import numpy as np
 from einops import rearrange
 
+
 # =============================================================================
 class GeneralizedPatchedDataset(torch.utils.data.Dataset):
     """
@@ -96,7 +97,7 @@ class GeneralizedPatchedDataset(torch.utils.data.Dataset):
         # Compute mean and std for normalization
         # Local import to prevent circular dependencies
         from inspectorch.utils import nanstd
-        
+
         self.y_mean = torch.nanmean(self.patches, dim=0)
         self.y_std = nanstd(self.patches, dim=0)
         if (self.y_std == 0).any():

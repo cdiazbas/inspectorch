@@ -6,8 +6,7 @@ import time
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.stats import norm
-from scipy.stats import norm
-from typing import Optional, List, Union, Tuple
+from typing import Optional, List, Union
 from . import utils
 from . import datasets
 
@@ -431,7 +430,9 @@ class FlowMatchingBackend(nn.Module):
         scheduler_n: Optional[float] = None,
         architecture: str = "MLP",
         time_embedding_dim: int = 32,
-        num_bins: Optional[int] = None,  # For API compatibility with flowutils, not used
+        num_bins: Optional[
+            int
+        ] = None,  # For API compatibility with flowutils, not used
         activation: nn.Module = nn.GELU(),
         dropout_probability: float = 0.0,
         use_batch_norm: bool = False,
