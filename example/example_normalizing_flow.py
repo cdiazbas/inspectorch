@@ -7,10 +7,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torch.utils.data
-from inspectorch import flowutils
+
+from inspectorch import DensityEstimator
 from einops import rearrange
 from inspectorch.plot_params import set_params
-from inspectorch import genutils
+from inspectorch import utils
+from inspectorch import GeneralizedPatchedDataset
 
 import warnings
 
@@ -22,12 +24,12 @@ set_params()
 
 
 # Print device info for debugging and reproducibility
-genutils.device_info()
+utils.device_info()
 
 # --- Data loading and preprocessing ---
 # Read the compressed Hinode data from file
 with np.load("hinode_data.npz") as npzfile:
-    # The notebook example normalizes by a fixed factor (186.0)
+    # The notebook example (example_normalizing_flow.ipynb) normalizes by a fixed factor (186.0)
     data = npzfile["data"] / 186.0
     wav = npzfile["wav"]
     pixel_size = npzfile["pixel_size"] * 3.0
@@ -41,7 +43,7 @@ print(f"Data shape: {data.shape}")
 # --- Dataset preparation ---
 
 # Wrap the data in a patched dataset for spectral analysis
-dataset = flowutils.GeneralizedPatchedDataset(
+dataset = GeneralizedPatchedDataset(
     data,
     dim_names="y wav x",  # Define the dimensions of the dataset
     feature_dims=["wav"],  # Specify the feature dimensions for spectral analysis
@@ -69,7 +71,7 @@ plt.savefig("models/raw_data.png", dpi=300, bbox_inches="tight")
 # --- Data preparation for training ---
 
 # Create a dot_dict for training arguments
-args = flowutils.dot_dict()
+args = utils.dot_dict()
 args.batch_size = 10000
 
 # Create a DataLoader for efficient batch training
@@ -79,7 +81,7 @@ train_loader = torch.utils.data.DataLoader(
 
 
 # Build the normalizing flow model for density estimation
-model = flowutils.Density_estimator()
+model = DensityEstimator(type="normalizing_flow")
 model.create_flow(
     input_size=dataset.flow_dim, num_layers=5, hidden_features=32, num_bins=8
 )
@@ -107,9 +109,9 @@ args.save_model = True
 args.load_existing = True
 
 # Save training arguments for reproducibility
-genutils.save_json(args, "models/nflow_args_hinode_mini.json")
+utils.save_json(args, "models/nflow_args_hinode_mini.json")
 
-# Train the normalizing flow model using the Density_estimator API
+# Train the normalizing flow model using the DensityEstimator API
 model.train_flow(
     train_loader=train_loader,
     learning_rate=args.learning_rate,
@@ -146,7 +148,7 @@ log_prob_reshaped = rearrange(log_prob, "(y x) -> y x", y=ny, x=nx)
 
 # Plot spatial distribution of log-probabilities
 fig, ax = plt.subplots(1, 1, figsize=(8, 8))
-spectral_to_white = genutils.create_spectral_to_white_cmap()
+spectral_to_white = utils.create_spectral_to_white_cmap()
 
 im = ax.imshow(
     log_prob_reshaped,

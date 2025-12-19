@@ -6,7 +6,10 @@ import time
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.stats import norm
-from . import genutils as gu
+from scipy.stats import norm
+from typing import Optional, List, Union, Tuple
+from . import utils
+from . import datasets
 
 # Flow Matching imports (Facebook's library)
 try:
@@ -35,11 +38,11 @@ except ImportError:
 # Utility Functions (Reused from flowutils.py)
 # =============================================================================
 
-dot_dict = gu.dot_dict
-nanstd = gu.nanstd
-nanvar = gu.nanvar
-nume2string = gu.nume2string
-GeneralizedPatchedDataset = gu.GeneralizedPatchedDataset
+dot_dict = utils.dot_dict
+nanstd = utils.nanstd
+nanvar = utils.nanvar
+nume2string = utils.nume2string
+GeneralizedPatchedDataset = datasets.GeneralizedPatchedDataset
 
 
 # =============================================================================
@@ -384,7 +387,7 @@ class VelocityModelWrapper(nn.Module):
 # Device Configuration (from flowutils.py)
 # =============================================================================
 
-configure_device = gu.configure_device
+configure_device = utils.configure_device
 
 
 # =============================================================================
@@ -392,11 +395,11 @@ configure_device = gu.configure_device
 # =============================================================================
 
 
-class FlowMatching_Density_estimator(nn.Module):
+class FlowMatchingBackend(nn.Module):
     """
     Flow Matching based density estimator for anomaly detection.
 
-    This class provides the same interface as Density_estimator from flowutils.py
+    This class provides the same interface as NormalizingFlowBackend from normalizing_flow.py
     but uses Flow Matching (Facebook's library) instead of Normalizing Flows.
 
     Attributes:
@@ -404,7 +407,7 @@ class FlowMatching_Density_estimator(nn.Module):
         prob_path (ProbPath): Probability path for flow matching
         y_mean (torch.Tensor): Mean for data normalization
         y_std (torch.Tensor): Std for data normalization
-        training_loss (list): Training loss history
+        training_loss (List[float]): Training loss history
     """
 
     def __init__(self):
@@ -414,25 +417,25 @@ class FlowMatching_Density_estimator(nn.Module):
                 "flow_matching is required. Install with:\n  pip install flow_matching"
             )
 
-        self.velocity_model = None
+        self.velocity_model: Optional[nn.Module] = None
         self.prob_path = None
-        self.y_mean = None
-        self.y_std = None
-        self.training_loss = []
+        self.y_mean: Optional[torch.Tensor] = None
+        self.y_std: Optional[torch.Tensor] = None
+        self.training_loss: List[float] = []
 
     def create_flow(
         self,
-        input_size,
-        num_layers=5,
-        hidden_features=128,
-        scheduler_n=None,
-        architecture="MLP",
-        time_embedding_dim=32,
-        num_bins=None,  # For API compatibility with flowutils, not used
-        activation=nn.GELU(),
-        dropout_probability=0.0,
-        use_batch_norm=False,
-    ):
+        input_size: int,
+        num_layers: int = 5,
+        hidden_features: int = 128,
+        scheduler_n: Optional[float] = None,
+        architecture: str = "MLP",
+        time_embedding_dim: int = 32,
+        num_bins: Optional[int] = None,  # For API compatibility with flowutils, not used
+        activation: nn.Module = nn.GELU(),
+        dropout_probability: float = 0.0,
+        use_batch_norm: bool = False,
+    ) -> None:
         """
         Creates a flow matching model for density estimation.
 
@@ -520,16 +523,16 @@ class FlowMatching_Density_estimator(nn.Module):
 
     def train_flow(
         self,
-        train_loader,
-        learning_rate=1e-3,
-        num_epochs=100,
-        device="cpu",
-        output_model=None,
-        save_model=False,
-        load_existing=False,
-        extra_noise=0.0,
-        training_mode="both",  # Options: "forward", "backward", "both"
-    ):
+        train_loader: torch.utils.data.DataLoader,
+        learning_rate: float = 1e-3,
+        num_epochs: int = 100,
+        device: str = "cpu",
+        output_model: Optional[str] = None,
+        save_model: bool = False,
+        load_existing: bool = False,
+        extra_noise: float = 0.0,
+        training_mode: str = "both",  # Options: "forward", "backward", "both"
+    ) -> None:
         """
         Trains the flow matching model.
 
@@ -674,16 +677,16 @@ class FlowMatching_Density_estimator(nn.Module):
 
     def log_prob(
         self,
-        inputs,
-        dataset_normalization=True,
-        batch_size=1000,
-        device="cpu",
-        solver_method="dopri5",
-        atol=1e-5,
-        rtol=1e-5,
-        exact_divergence=False,
-        step_size=0.1,
-    ):
+        inputs: Union[torch.Tensor, np.ndarray, object],
+        dataset_normalization: bool = True,
+        batch_size: int = 1000,
+        device: str = "cpu",
+        solver_method: str = "dopri5",
+        atol: float = 1e-5,
+        rtol: float = 1e-5,
+        exact_divergence: bool = False,
+        step_size: float = 0.1,
+    ) -> np.ndarray:
         """
         Computes log-probability of inputs using ODE integration with
         instantaneous change of variables.
