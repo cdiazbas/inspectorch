@@ -12,17 +12,20 @@ import time
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.stats import norm
-from . import genutils as gu
+from scipy.stats import norm
+from typing import Optional, List, Union, Tuple, Dict
+from . import utils as iu
+from . import datasets
 
 
 # =============================================================================
 # Utility Functions (Reused from flowutils.py)
 # =============================================================================
-dot_dict = gu.dot_dict
-nanstd = gu.nanstd
-nanvar = gu.nanvar
-nume2string = gu.nume2string
-GeneralizedPatchedDataset = gu.GeneralizedPatchedDataset
+dot_dict = iu.dot_dict
+nanstd = iu.nanstd
+nanvar = iu.nanvar
+nume2string = iu.nume2string
+GeneralizedPatchedDataset = datasets.GeneralizedPatchedDataset
 
 
 # =============================================================================
@@ -116,16 +119,16 @@ def create_linear_transform_withActNorm(input_size):
 
 
 # =============================================================================
-class Density_estimator(nn.Module):
+class NormalizingFlowBackend(nn.Module):
     """
-    Density_estimator is a PyTorch module for density estimation using
+    NormalizingFlowBackend is a PyTorch module for density estimation using
     normalizing flows.
 
     Attributes:
         flow_model (nn.Module): The flow-based model for density estimation.
-        y_mean (float or np.ndarray): Mean of the target variable, used for normalization.
-        y_std (float or np.ndarray): Standard deviation of the target variable, used for normalization.
-        training_loss (list): List to store training loss values during flow training.
+        y_mean (torch.Tensor or None): Mean of the target variable, used for normalization.
+        y_std (torch.Tensor or None): Standard deviation of the target variable, used for normalization.
+        training_loss (List[float]): List to store training loss values during flow training.
 
     Methods:
         create_flow(input_size, num_layers, hidden_features, num_bins):
@@ -150,16 +153,18 @@ class Density_estimator(nn.Module):
     """
 
     def __init__(self):
-        super(Density_estimator, self).__init__()
+        super(NormalizingFlowBackend, self).__init__()
         # Flow model will be created later
-        self.flow_model = None
-        self.y_mean = None
-        self.y_std = None
+        self.flow_model: Optional[nn.Module] = None
+        self.y_mean: Optional[torch.Tensor] = None
+        self.y_std: Optional[torch.Tensor] = None
 
         # Extra attributes to store information
-        self.training_loss = []
+        self.training_loss: List[float] = []
 
-    def create_flow(self, input_size, num_layers, hidden_features, num_bins):
+    def create_flow(
+        self, input_size: int, num_layers: int, hidden_features: int, num_bins: int
+    ) -> None:
         """
         Creates a flow-based model for density estimation or generative
         modeling.
@@ -176,8 +181,12 @@ class Density_estimator(nn.Module):
         self.flow_model = create_flow(input_size, num_layers, hidden_features, num_bins)
 
     def log_prob(
-        self, inputs, dataset_normalization=True, batch_size=100000, device="cpu"
-    ):
+        self,
+        inputs: Union[torch.Tensor, np.ndarray, object],
+        dataset_normalization: bool = True,
+        batch_size: int = 100_000,
+        device: str = "cpu",
+    ) -> np.ndarray:
         """
         Computes the log probability of the input data using the flow model.
 
@@ -247,15 +256,15 @@ class Density_estimator(nn.Module):
 
     def train_flow(
         self,
-        train_loader,
-        learning_rate=1e-3,
-        num_epochs=100,
-        device="cpu",
-        output_model=None,
-        save_model=False,
-        load_existing=False,
-        extra_noise=1e-3,
-    ):
+        train_loader: torch.utils.data.DataLoader,
+        learning_rate: float = 1e-3,
+        num_epochs: int = 100,
+        device: str = "cpu",
+        output_model: Optional[str] = None,
+        save_model: bool = False,
+        load_existing: bool = False,
+        extra_noise: float = 1e-3,
+    ) -> None:
         if train_loader is not None:
             self.y_mean = train_loader.dataset.y_mean
             self.y_std = train_loader.dataset.y_std
@@ -387,7 +396,7 @@ class FlowLogProbWrapper(nn.Module):
 
 # =============================================================================
 # =============================================================================
-configure_device = gu.configure_device
+configure_device = iu.configure_device
 
 
 # =============================================================================

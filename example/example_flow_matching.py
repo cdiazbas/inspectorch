@@ -7,10 +7,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torch.utils.data
-from inspectorch import mflowutils
+
+from inspectorch import utils
+from inspectorch import GeneralizedPatchedDataset
+from inspectorch import DensityEstimator
 from einops import rearrange
 from inspectorch.plot_params import set_params
-from inspectorch import genutils
+
 
 import warnings
 
@@ -22,12 +25,12 @@ set_params()
 
 
 # Print device info for debugging and reproducibility
-genutils.device_info()
+utils.device_info()
 
 # --- Data loading and preprocessing ---
 # Read the compressed Hinode data from file
 with np.load("hinode_data.npz") as npzfile:
-    # The notebook example normalizes by a fixed factor (186.0)
+    # The notebook example (example_flow_matching.ipynb) normalizes by a fixed factor (186.0)
     data = npzfile["data"] / 186.0
     wav = npzfile["wav"]
     pixel_size = npzfile["pixel_size"] * 3.0
@@ -41,7 +44,7 @@ print(f"Data shape: {data.shape}")
 # --- Dataset preparation ---
 
 # Wrap the data in a patched dataset for spectral analysis
-dataset = mflowutils.GeneralizedPatchedDataset(
+dataset = GeneralizedPatchedDataset(
     data,
     dim_names="y wav x",  # Define the dimensions of the dataset
     feature_dims=["wav"],  # Specify the feature dimensions for spectral analysis
@@ -72,7 +75,7 @@ plt.savefig("models/raw_data_mflow.png", dpi=300, bbox_inches="tight")
 # --- Data preparation for training ---
 
 # Create a dot_dict for training arguments
-args = mflowutils.dot_dict()
+args = utils.dot_dict()
 args.batch_size = 10000
 
 # Create a DataLoader for efficient batch training
@@ -82,7 +85,7 @@ train_loader = torch.utils.data.DataLoader(
 
 
 # Build the Flow Matching model for density estimation
-model = mflowutils.FlowMatching_Density_estimator()
+model = DensityEstimator(type="flow_matching")
 model.create_flow(
     input_size=dataset.flow_dim,
     num_layers=5,
@@ -117,9 +120,9 @@ args.load_existing = True
 args.extra_noise = 0.0  # Additional noise for regularization (0.0 = no extra noise)
 
 # Save training arguments for reproducibility
-genutils.save_json(args, "models/mflow_args_hinode_mini.json")
+utils.save_json(args, "models/mflow_args_hinode_mini.json")
 
-# Train the Flow Matching model using the FlowMatching_Density_estimator API
+# Train the Flow Matching model using the DensityEstimator API
 model.train_flow(
     train_loader=train_loader,
     learning_rate=args.learning_rate,
@@ -167,7 +170,7 @@ log_prob_reshaped = rearrange(log_prob, "(y x) -> y x", y=ny, x=nx)
 
 # Plot spatial distribution of log-probabilities
 fig, ax = plt.subplots(1, 1, figsize=(8, 8))
-spectral_to_white = genutils.create_spectral_to_white_cmap()
+spectral_to_white = utils.create_spectral_to_white_cmap()
 
 im = ax.imshow(
     log_prob_reshaped,
