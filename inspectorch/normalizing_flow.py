@@ -12,8 +12,7 @@ import time
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.stats import norm
-from scipy.stats import norm
-from typing import Optional, List, Union, Tuple, Dict
+from typing import Optional, List, Union
 from . import utils as iu
 from . import datasets
 
