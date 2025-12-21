@@ -202,4 +202,4 @@ example/models/*
 
 # Docs:
 mkdocs*
-docs/*
+dont_track*
