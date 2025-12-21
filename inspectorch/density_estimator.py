@@ -3,6 +3,8 @@ import numpy as np
 
 from .normalizing_flow import NormalizingFlowBackend
 from .flow_matching import FlowMatchingBackend
+from .flow_matching_sbi import FlowMatchingSBIBackend
+
 
 
 class DensityEstimator(nn.Module):
@@ -12,7 +14,7 @@ class DensityEstimator(nn.Module):
 
     Args:
         type (str): The type of density estimator to use.
-                    Options: "normalizing_flow" (default) or "flow_matching".
+                    Options: "normalizing_flow" (default), "flow_matching", or "flow_matching_sbi".
         *args: Additional positional arguments passed to the backend constructor.
         **kwargs: Additional keyword arguments passed to the backend constructor.
     """
@@ -25,10 +27,21 @@ class DensityEstimator(nn.Module):
             self.backend = NormalizingFlowBackend(*args, **kwargs)
         elif self.type == "flow_matching":
             self.backend = FlowMatchingBackend(*args, **kwargs)
+        elif self.type == "flow_matching_sbi":
+            self.backend = FlowMatchingSBIBackend(*args, **kwargs)
         else:
             raise ValueError(
-                f"Unknown type: {type}. Choose 'normalizing_flow' or 'flow_matching'."
+                f"Unknown type: {type}. Choose 'normalizing_flow', 'flow_matching', or 'flow_matching_sbi'."
             )
+
+    @property
+    def velocity_model(self):
+        """
+        Expose the backend's velocity model directly.
+        """
+        if hasattr(self.backend, "velocity_model"):
+            return self.backend.velocity_model
+        return None
 
     def create_flow(self, *args, **kwargs) -> None:
         """
