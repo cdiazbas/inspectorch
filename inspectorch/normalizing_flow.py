@@ -555,7 +555,7 @@ def plot_train_loss(train_loss_avg, show_plot=False, save_path=None):
         plt.title("Final loss: " + output_title_latex)
     plt.minorticks_on()
     plt.xlabel("Epoch")
-    plt.ylabel(r"$- \log p_{\phi}(x)$")
+    plt.ylabel(r"NF Loss: $-\log p_\theta(x)$")
 
     if save_path is not None:
         plt.savefig(save_path, bbox_inches="tight")

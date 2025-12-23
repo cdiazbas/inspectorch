@@ -29,9 +29,12 @@ class DensityEstimator(nn.Module):
             self.backend = FlowMatchingBackend(*args, **kwargs)
         elif self.type == "flow_matching_sbi":
             self.backend = FlowMatchingSBIBackend(*args, **kwargs)
+        elif self.type == "flow_matching_cfm":
+            from .flow_matching_cfm import FlowMatchingCFMBackend
+            self.backend = FlowMatchingCFMBackend(*args, **kwargs)
         else:
             raise ValueError(
-                f"Unknown type: {type}. Choose 'normalizing_flow', 'flow_matching', or 'flow_matching_sbi'."
+                f"Unknown type: {type}. Choose 'normalizing_flow', 'flow_matching', 'flow_matching_sbi', or 'flow_matching_cfm'."
             )
 
     @property

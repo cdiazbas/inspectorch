@@ -8,13 +8,23 @@ from typing import Optional, List, Union, Tuple
 from tqdm import tqdm
 from . import utils
 
-# Optional dependency: torchdiffeq
+# Required dependency: torchdiffeq
 try:
     from torchdiffeq import odeint
     TORCHDIFFEQ_AVAILABLE = True
 except ImportError:
-    TORCHDIFFEQ_AVAILABLE = False
-    print("Warning: torchdiffeq not installed. FlowMatchingSBIBackend will not support sampling.")
+    raise ImportError(
+        "\n" + "="*70 + "\n"
+        "ERROR: torchdiffeq is required for FlowMatchingSBIBackend\n"
+        "\n"
+        "Install with:\n"
+        "  pip install torchdiffeq\n"
+        "\n"
+        "Or install from source:\n"
+        "  git clone https://github.com/rtqichen/torchdiffeq\n"
+        "  cd torchdiffeq && pip install -e .\n"
+        + "="*70
+    )
 
 
 # =============================================================================
@@ -622,7 +632,7 @@ class FlowMatchingSBIBackend(nn.Module):
                 pass
         plt.minorticks_on()
         plt.xlabel("Epoch")
-        plt.ylabel("Flow Matching Loss")
+        plt.ylabel(r"FM Loss: $\|\mathbf{v}_\theta - \mathbf{u}_t\|^2$")
         
         if save_path is not None:
             plt.savefig(save_path, bbox_inches="tight")

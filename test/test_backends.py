@@ -6,6 +6,7 @@ import torch.utils.data
 from sklearn.datasets import make_moons
 import os
 import sys
+import argparse
 
 # Ensure inspectorch is in path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -82,9 +83,13 @@ def plot_results(name, data, samples, log_probs_grid=None, extent=None):
     plt.title(f"{name}: Log Prob")
     
     plt.tight_layout()
-    plt.savefig(f"models/test_backend_{name}.png")
+    plt.tight_layout()
+    # Save to script directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    save_path = os.path.join(script_dir, f"test_backend_{name}.png")
+    plt.savefig(save_path)
     plt.close()
-    print(f"Saved plot to models/test_backend_{name}.png")
+    print(f"Saved plot to {save_path}")
 
 # === Tester ===
 
@@ -119,6 +124,13 @@ def test_backend(backend_name, data, sequence_length=1):
         kwargs['num_bins'] = 8 
         model.create_flow(input_size=input_dim, **kwargs)
         
+    elif backend_name == "flow_matching_cfm":
+        kwargs['hidden_features'] = 64
+        kwargs['num_layers'] = 3
+        kwargs['method'] = "exact" # OT-CFM
+        kwargs['architecture'] = "AdaMLP"
+        model.create_flow(input_size=input_dim, **kwargs)
+
     else: # flow_matching (Default)
         kwargs['hidden_features'] = 32
         kwargs['num_layers'] = 5
@@ -128,18 +140,17 @@ def test_backend(backend_name, data, sequence_length=1):
         model.create_flow(input_size=input_dim, **kwargs)
         
     print("Model created.")
+    model.print_summary()
     
     # 3. Check Initial Log Prob
     # Use dataset object for backends that expect it
     sample_batch_idx = list(range(10))
     sample_subset = torch.utils.data.Subset(dataset, sample_batch_idx)
 
-    # Note: model.log_prob usually accepts tensor or object with .patches
-    # To be safe for all backends, passing the MockDataset object or a wrapper
     class SubsetWrapper:
         def __init__(self, subset):
             self.subset = subset
-            # Mock patches logic: concat all data in subset
+            # Mock patches: concat all data in subset
             self.patches = torch.stack([subset[i] for i in range(len(subset))])
             self.y_mean = subset.dataset.y_mean
             self.y_std = subset.dataset.y_std
@@ -166,7 +177,7 @@ def test_backend(backend_name, data, sequence_length=1):
         # Standard LR and Epochs
         lr = 1e-3
         epochs = 100
-        model.train_flow(loader, num_epochs=epochs, learning_rate=lr, save_model=False)
+        model.train_flow(train_loader=loader, num_epochs=epochs, learning_rate=lr, save_model=False)
     except Exception as e:
         print(f"TRAINING FAILED: {e}")
         import traceback; traceback.print_exc()
@@ -216,11 +227,6 @@ def test_backend(backend_name, data, sequence_length=1):
                 self.y_std = dataset.y_std if hasattr(dataset, 'y_std') else torch.ones(2)
             def normalized_patches(self):
                 # Standard normalization (if used)
-                # Note: reshaping might mess up broadcast if y_mean is (2,) and patches (N, 2, 1)
-                # If StarFlow T=2, C=1, y_mean should be handled carefully.
-                # Here we assume data was pre-normalized or mock dataset handles it.
-                # For simplicity in this test, we skip complex normalization logic check
-                # as get_moon_data is already normalized standard normal.
                 return self.patches
     
     try:
@@ -248,26 +254,48 @@ class TLogger:
         self.log.flush()
 
 def main():
-    if not os.path.exists("models"):
-        os.makedirs("models")
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='Test INSPECTORCH backends')
+    parser.add_argument('--model', type=str, default=None,
+                       help='Specific backend to test (e.g., flow_matching_cfm). If not specified, tests all backends.')
+    args = parser.parse_args()
+    
+    # Output directory: Same as this script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    output_dir = script_dir # "inspectorch/test/" implicitly
     
     # Setup Logger
     # Clean previous log if exists because we append now
-    if os.path.exists("models/test_run.log"):
-        os.remove("models/test_run.log")
+    log_file = os.path.join(output_dir, "test_run.log")
+    if os.path.exists(log_file):
+        os.remove(log_file)
         
-    sys.stdout = TLogger("models/test_run.log", sys.stdout)
-    sys.stderr = TLogger("models/test_run.log", sys.stderr)
-    print(f"Logging to models/test_run.log")
-        
+    sys.stdout = TLogger(log_file, sys.stdout)
+    sys.stderr = TLogger(log_file, sys.stderr)
+    print(f"Logging to {log_file}")
+    
     data = get_moon_data()
     
-    backends = [
+    # All available backends
+    all_backends = [
         "normalizing_flow",
         "flow_matching",
         "flow_matching_sbi",
-        # "starflow" # Removed
+        "flow_matching_cfm"
     ]
+    
+    # Determine which backends to test
+    if args.model:
+        if args.model in all_backends:
+            backends = [args.model]
+            print(f"Testing single backend: {args.model}")
+        else:
+            print(f"ERROR: Unknown backend '{args.model}'")
+            print(f"Available backends: {', '.join(all_backends)}")
+            return
+    else:
+        backends = all_backends
+        print(f"Testing all backends: {', '.join(backends)}")
     
     for b in backends:
         try:
