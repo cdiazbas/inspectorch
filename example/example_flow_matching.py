@@ -154,7 +154,7 @@ log_prob = model.log_prob(
     dataset_normalization=True,
     batch_size=1000,
     device=args.device,
-    solver_method="dopri5",  # Options: 'dopri5', 'rk4', 'euler', 'midpoint'
+    solver_method="euler",  # Options: 'dopri5', 'rk4', 'euler', 'midpoint'
     atol=1e-5,
     rtol=1e-5,
     exact_divergence=False,  # Use Hutchinson estimator for speed (True = exact but slower)

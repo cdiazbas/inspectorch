@@ -224,6 +224,16 @@ class NormalizingFlowBackend(nn.Module):
 
         return np.concatenate(results)
 
+    def sample(self, num_samples: int, device: str = "cpu") -> torch.Tensor:
+        """
+        Samples from the flow model.
+        """
+        self.flow_model.eval()
+        iu.configure_device(self.flow_model, device)
+        with torch.no_grad():
+            samples = self.flow_model.sample(num_samples)
+        return samples
+
     def print_summary(self):
         """
         Prints a summary of the flow model.

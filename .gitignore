@@ -203,3 +203,4 @@ example/models/*
 # Docs:
 mkdocs*
 dont_track*
+*.png
