@@ -32,11 +32,23 @@ dependencies = [
     "jupyterlab",
     "tqdm",
     "flow_matching",
+    "torchdiffeq",
+    "torchcfm",
+    "pot",
 ]
 
 [project.optional-dependencies]
+# Development tools
 dev = ["pytest", "pytest-cov", "ruff", "black"]
+
+# Visualization
 viz = ["seaborn"]
+
+# Complete installation with all features
+all = [
+    "pytest", "pytest-cov", "ruff", "black",  # dev
+    "seaborn",  # viz
+]
 
 
 # version will be taken from git tags

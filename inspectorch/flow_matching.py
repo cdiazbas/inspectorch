@@ -11,16 +11,24 @@ from typing import Optional, List, Union
 from . import utils
 from . import datasets
 
-# Flow Matching imports (Facebook's library)
+# Flow Matching imports (Facebook's library) - REQUIRED
 try:
     from flow_matching.path import AffineProbPath
     from flow_matching.solver import ODESolver
-
     FLOW_MATCHING_AVAILABLE = True
 except ImportError:
-    FLOW_MATCHING_AVAILABLE = False
-    print("Warning: flow_matching not installed. Install with:")
-    print("  pip install flow_matching")
+    raise ImportError(
+        "\n" + "="*70 + "\n"
+        "ERROR: flow_matching library is required for FlowMatchingBackend\n"
+        "\n"
+        "Install with:\n"
+        "  pip install flow_matching\n"
+        "\n"
+        "Or install from source:\n"
+        "  git clone https://github.com/facebookresearch/flow_matching\n"
+        "  cd flow_matching && pip install -e .\n"
+        + "="*70
+    )
 
 # Optional dependency: torchdiffeq (Used for manual log_prob)
 try:
@@ -1282,7 +1290,7 @@ def plot_train_loss(train_loss_avg, show_plot=False, save_path=None):
         plt.title("Final loss: " + output_title_latex)
     plt.minorticks_on()
     plt.xlabel("Epoch")
-    plt.ylabel("Flow Matching Loss")
+    plt.ylabel(r"FM Loss: $\|\mathbf{v}_\theta - \mathbf{u}_t\|^2$")
 
     if save_path is not None:
         plt.savefig(save_path, bbox_inches="tight")
