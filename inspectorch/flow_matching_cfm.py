@@ -37,12 +37,13 @@ except ImportError:
 # Use existing dependencies for inference
 from torchdiffeq import odeint
 
-# Import VectorFieldAdaMLP from flow_matching_sbi
+# Import VectorFieldAdaMLP from shared velocity_models module
 try:
-    from .flow_matching_sbi import VectorFieldAdaMLP
+    from .velocity_models import VectorFieldAdaMLP
 except ImportError:
     VectorFieldAdaMLP = None
-    print("WARNING: Could not import VectorFieldAdaMLP from flow_matching_sbi.")
+    print("WARNING: Could not import VectorFieldAdaMLP from velocity_models.")
+
 
 class CFMMLPWrapper(nn.Module):
     """
@@ -122,33 +123,94 @@ class FlowMatchingCFMBackend:
         self, 
         input_size: int, 
         hidden_features: int = 64, 
-        num_layers: int = 3, 
-        architecture: str = "MLP", 
+        num_layers: int = 2,
+        architecture: str = "AdaMLP",
+        activation: nn.Module = nn.GELU(),
+        dropout_probability: float = 0.0,
+        use_batch_norm: bool = False,
         **kwargs
     ):
-        """
-        Initialize the neural network vector field.
-        Args:
-            architecture: "MLP" (Standard) or "AdaMLP" (Adaptive)
-        """
+        """Initialize the neural network vector field."""
         self.input_dim = input_size
         
-        if architecture == "AdaMLP" and VectorFieldAdaMLP is not None:
-             # VectorFieldAdaMLP(input_dim, context_dim, ...)
-             self.velocity_model = VectorFieldAdaMLP(
-                 input_dim=input_size,
-                 context_dim=0,
-                 hidden_features=hidden_features,
-                 num_layers=num_layers,
-                 time_emb_dim=kwargs.get("time_embedding_dim", 32)
-             )
-        else:
-            if architecture == "AdaMLP":
-                print("WARNING: AdaMLP requested but not available. Falling back to MLP.")
+        # Import all models from shared module
+        from .velocity_models import (
+            VectorFieldAdaMLP,
+            VelocityMLPLegacy,
+            VelocityResNet,
+            VelocityResNetFlow,
+            FourierMLP,
+        )
+        
+        if architecture == "AdaMLP":
+            if VectorFieldAdaMLP is not None:
+                self.velocity_model = VectorFieldAdaMLP(
+                    input_dim=input_size,
+                    context_dim=0,
+                    hidden_features=hidden_features,
+                    num_layers=num_layers,
+                    time_embedding_dim=kwargs.get("time_embedding_dim", 32)
+                )
+                print("  Using VectorFieldAdaMLP architecture")
+            else:
+                print("WARNING: VectorFieldAdaMLP not available. Using simple MLP fallback.")
+                net = MLP(input_size, hidden_features, num_layers)
+                self.velocity_model = CFMMLPWrapper(net)
                 
-            # Standard MLP
-            net = MLP(input_size, hidden_features, num_layers)
-            self.velocity_model = CFMMLPWrapper(net)
+        elif architecture == "MLPLegacy":
+            # Wrap legacy MLP for CFM compatibility
+            legacy_mlp = VelocityMLPLegacy(
+                input_dim=input_size,
+                hidden_dim=hidden_features,
+                num_layers=num_layers,
+                time_embedding_dim=kwargs.get("time_embedding_dim", 32),
+            )
+            self.velocity_model = CFMMLPWrapper(legacy_mlp)
+            print("  Using Legacy MLP architecture")
+            
+        elif architecture == "ResNet":
+            resnet = VelocityResNet(
+                input_dim=input_size,
+                hidden_dim=hidden_features,
+                num_blocks=num_layers,
+                time_embedding_dim=kwargs.get("time_embedding_dim", 32),
+            )
+            self.velocity_model = CFMMLPWrapper(resnet)
+            print("  Using VelocityResNet architecture")
+            
+        elif architecture == "ResNetFlow":
+            resnetflow = VelocityResNetFlow(
+                input_dim=input_size,
+                hidden_dim=hidden_features,
+                num_blocks=num_layers,
+                time_embedding_dim=kwargs.get("time_embedding_dim", 32),
+                activation=activation if callable(activation) else F.relu,
+                dropout_probability=dropout_probability,
+                use_batch_norm=use_batch_norm,
+            )
+            self.velocity_model = CFMMLPWrapper(resnetflow)
+            print("  Using nflows ResidualNet architecture")
+            
+        elif architecture == "FourierMLP":
+            fourier = FourierMLP(
+                dim_in=input_size,
+                dim_out=input_size,
+                num_resnet_blocks=num_layers,
+                dim_hidden=hidden_features,
+                activation=activation,
+                time_embedding_dim=kwargs.get("time_embedding_dim", 32),
+                **kwargs
+            )
+            self.velocity_model = CFMMLPWrapper(fourier)
+            print("  Using FourierMLP architecture")
+            
+        else:
+            raise ValueError(
+                f"Unknown architecture: {architecture}. "
+                f"Choose from: 'AdaMLP', 'ResNet', 'ResNetFlow', 'FourierMLP', 'MLPLegacy'"
+            )
+
+
         
     def train_flow(
         self, 
@@ -513,7 +575,18 @@ class FlowMatchingCFMBackend:
         # Integration times: 1.0 -> 0.0 (Data -> Noise)
         t_span = torch.tensor([1.0, 0.0], device=device)
         if solver_method in ['euler', 'rk4', 'midpoint']:
-            t_span = torch.linspace(1, 0, steps, device=device)
+            # Prioritize step_size if it was passed explicitly (default 0.1 in sig)
+            # or in kwargs. Note: arguments in sig are local vars.
+            # steps defaults to 100. step_size defaults to 0.1.
+            # If default steps(100) and step_size(0.1) mismatch -> 100 vs 10.
+            # Our test sends step_size=0.1.
+            
+            # Logic: If 'steps' was passed as kwarg (non-default), use it.
+            # Else if 'step_size' was passed (or default), use it?
+            # Safest: compute steps from step_size
+            
+            computed_steps = int(1.0 / step_size)
+            t_span = torch.linspace(1, 0, computed_steps, device=device)
 
         # ODE function matching SBI exactly
         class ODEFuncLogProb(nn.Module):
@@ -548,7 +621,7 @@ class FlowMatchingCFMBackend:
         print(f"Computing log-probs on {device} using {solver_method}...")
         
         with torch.no_grad():
-            for batch in tqdm(loader, desc="Log Prob"):
+            for batch in tqdm(loader, desc="Computing log prob"):
                 x_batch = batch[0].to(device)
 
                 batch_n = x_batch.shape[0]
@@ -617,10 +690,31 @@ class FlowMatchingCFMBackend:
         t_span = torch.tensor([1.0, 0.0]).to(device)
         # Handle fixed step solvers (must match naive implementation!)
         if solver_method in ["euler", "rk4", "midpoint"]:
-            t_span = torch.linspace(1, 0, steps, device=device)
+            # Prioritize step_size logic akin to _log_prob_naive
+            step_size_arg = kwargs.get('step_size', step_size) # Check kwargs or argument
+            # Note: argument 'step_size' defaults to 0.1 but 'steps' defaults to 100.
+            # If step_size is default(0.1) and steps is default(100), we have conflict.
+            # But test passes step_size=0.1.
+            
+            # Simple priority:
+            if 'step_size' in kwargs: # Explicit kwarg
+                 computed_steps = int(1.0 / kwargs['step_size'])
+                 t_span = torch.linspace(1, 0, computed_steps, device=device)
+            elif step_size != 0.1: # Explicit arg? (hard to tell if default, assume used if changed)
+                 computed_steps = int(1.0 / step_size)
+                 t_span = torch.linspace(1, 0, computed_steps, device=device)
+            else:
+                 # Default behavior or steps arg
+                 # But wait, we want to match flow_matching.py behavior which is 10 steps for 0.1
+                 # If step_size is 0.1 (default) -> 10 steps.
+                 # If steps is 100 (default) -> 100 steps.
+                 
+                 # Let's standardize: Calculate steps from step_size ALWAYS
+                 computed_steps = int(1.0 / step_size)
+                 t_span = torch.linspace(1, 0, computed_steps, device=device)
         
         with torch.no_grad():
-            for batch in loader:
+            for batch in tqdm(loader, desc="Computing log prob"):
                 x = batch[0].to(device)
                 
                 # Combined state approach (original CFM implementation)

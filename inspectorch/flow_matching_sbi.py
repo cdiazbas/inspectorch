@@ -26,196 +26,8 @@ except ImportError:
         + "="*70
     )
 
-
-# =============================================================================
-# Time Embeddings (Reference: SBI/Vaswani)
-# =============================================================================
-
-class SinusoidalTimeEmbedding(nn.Module):
-    """Sinusoidal time embedding as used in Vaswani et al. (2017)."""
-    def __init__(self, embed_dim: int = 16, max_freq: float = 1000.0):
-        super().__init__()
-        if embed_dim % 2 != 0:
-            raise ValueError("embedding dimension must be even")
-        self.embed_dim = embed_dim
-        self.max_freq = max_freq
-        div_term = torch.exp(
-            torch.arange(0, embed_dim, 2) * (-math.log(max_freq) / embed_dim)
-        )
-        self.register_buffer("div_term", div_term)
-
-    def forward(self, t: torch.Tensor) -> torch.Tensor:
-        if t.ndim == 0:
-            t = t.unsqueeze(0)
-        if t.ndim == 1:
-            t = t.unsqueeze(-1)
-            
-        time_embedding = torch.zeros(t.shape[:-1] + (self.embed_dim,), device=t.device)
-        time_embedding[..., 0::2] = torch.sin(t * self.div_term)
-        time_embedding[..., 1::2] = torch.cos(t * self.div_term)
-        return time_embedding
-
-
-class RandomFourierTimeEmbedding(nn.Module):
-    """Gaussian random features for encoding time steps."""
-    def __init__(self, embed_dim: int = 100, scale: float = 30.0):
-        super().__init__()
-        self.embed_dim = embed_dim
-        self.register_buffer("W", torch.randn(embed_dim // 2) * scale)
-
-    def forward(self, t: torch.Tensor) -> torch.Tensor:
-        if t.ndim == 0: t = t.view(1, 1)
-        elif t.ndim == 1: t = t.unsqueeze(-1)
-        
-        times_proj = t * self.W[None, :] * 2 * math.pi
-        embedding = torch.cat([torch.sin(times_proj), torch.cos(times_proj)], dim=-1)
-        return embedding
-
-
-# =============================================================================
-# AdaMLP Components (Reference: SBI/DiT)
-# =============================================================================
-
-class AdaMLPBlock(nn.Module):
-    """Residual MLP block with adaptive layer norm for conditioning."""
-    def __init__(self, hidden_features: int, cond_dim: int, mlp_ratio: int = 4, activation: type[nn.Module] = nn.GELU):
-        super().__init__()
-        self.ada_ln = nn.Sequential(
-            nn.Linear(cond_dim, hidden_features),
-            nn.SiLU(),
-            nn.Linear(hidden_features, 3 * hidden_features),
-        )
-        # Initialize last layer to zero for identity start
-        nn.init.zeros_(self.ada_ln[-1].weight)
-        nn.init.zeros_(self.ada_ln[-1].bias)
-
-        self.block = nn.Sequential(
-            nn.Linear(hidden_features, hidden_features * mlp_ratio),
-            activation(),
-            nn.Linear(hidden_features * mlp_ratio, hidden_features),
-        )
-
-    def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
-        # cond shape: (batch, cond_dim)
-        shift, scale, gate = self.ada_ln(cond).chunk(3, dim=-1)
-        gate = gate + 1.0
-        y = (scale + 1) * x + shift
-        y = self.block(y)
-        return x + gate * y
-
-
-class GlobalEmbeddingMLP(nn.Module):
-    """Computes global embedding from time and context."""
-    def __init__(
-        self,
-        input_dim: int,
-        output_dim: int,
-        time_emb_dim: int = 32,
-        hidden_features: int = 100,
-        time_emb_type: str = "sinusoidal",
-        activation: type[nn.Module] = nn.GELU
-    ):
-        super().__init__()
-        if time_emb_type == "sinusoidal":
-            self.time_emb = SinusoidalTimeEmbedding(embed_dim=time_emb_dim)
-        else:
-            self.time_emb = RandomFourierTimeEmbedding(embed_dim=time_emb_dim)
-
-        # Input to MLP is concatenated time_emb + context
-        # If context is provided, else just time_emb
-        self.input_layer = nn.Linear(time_emb_dim + input_dim, hidden_features)
-        
-        self.mlp = nn.Sequential(
-            activation(),
-            nn.Linear(hidden_features, hidden_features),
-            activation(),
-            nn.Linear(hidden_features, hidden_features),
-        )
-        self.output_layer = nn.Linear(hidden_features, output_dim)
-
-    def forward(self, t: torch.Tensor, x_emb: Optional[torch.Tensor] = None) -> torch.Tensor:
-        t_emb = self.time_emb(t) # (batch, time_emb_dim)
-        
-        if x_emb is not None:
-            # Flatten or ensure shape compatibility
-            if x_emb.ndim > 2:
-                x_emb = x_emb.view(x_emb.shape[0], -1) 
-            cond_emb = torch.cat([t_emb, x_emb], dim=-1)
-        else:
-            cond_emb = t_emb
-            
-        h = self.input_layer(cond_emb)
-        h = self.mlp(h)
-        return self.output_layer(h)
-
-
-class VectorFieldAdaMLP(nn.Module):
-    """
-    Adaptive MLP Vector Field Network.
-    Uses AdaMLP blocks where time/context modulate features via AdaLN.
-    """
-    def __init__(
-        self,
-        input_dim: int,
-        context_dim: int,
-        hidden_features: int = 128,
-        num_layers: int = 5,
-        time_emb_dim: int = 32,
-        activation: type[nn.Module] = nn.GELU,
-    ):
-        super().__init__()
-        
-        # Global embedding network (Time + Context -> Embedding)
-        # We use a fixed embedding size for the AdaLN modulation input
-        self.cond_emb_dim = hidden_features 
-        
-        self.global_mlp = GlobalEmbeddingMLP(
-            input_dim=context_dim,
-            output_dim=self.cond_emb_dim,
-            time_emb_dim=time_emb_dim,
-            hidden_features=hidden_features,
-            activation=activation
-        )
-
-        # Main Network
-        self.layers = nn.ModuleList()
-        
-        # Input projection
-        self.layers.append(nn.Linear(input_dim, hidden_features))
-
-        # AdaMLP Blocks
-        for _ in range(num_layers):
-            self.layers.append(
-                AdaMLPBlock(
-                    hidden_features=hidden_features,
-                    cond_dim=self.cond_emb_dim,
-                    activation=activation
-                )
-            )
-
-        # Output projection
-        self.final_layer = nn.Linear(hidden_features, input_dim) 
-        # Initialize output to zero for stability
-        nn.init.zeros_(self.final_layer.weight)
-        nn.init.zeros_(self.final_layer.bias)
-
-    def forward(self, t: torch.Tensor, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """
-        t: Time (batch,) or (batch, 1)
-        x: State (batch, input_dim)
-        context: Context (batch, context_dim)
-        """
-        # Get conditioning embedding
-        cond_emb = self.global_mlp(t, x_emb=context) # (batch, cond_emb_dim)
-        
-        # Forward pass
-        h = x
-        h = self.layers[0](h) # Input projection
-        
-        for layer in self.layers[1:]:
-            h = layer(h, cond_emb)
-            
-        return self.final_layer(h)
+# Import velocity models from shared module
+from .velocity_models import VectorFieldAdaMLP
 
 
 # =============================================================================
@@ -240,32 +52,84 @@ class FlowMatchingSBIBackend(nn.Module):
         num_layers: int = 5,
         hidden_features: int = 128,
         time_embedding_dim: int = 32,
-        context_dim: int = 0, # Should match flattened data dim if self-conditioned, or specific context
-        architecture: str = "AdaMLP", # Default to AdaMLP 
+        context_dim: int = 0,
+        architecture: str = "AdaMLP",
         activation: nn.Module = nn.GELU(),
+        dropout_probability: float = 0.0,
+        use_batch_norm: bool = False,
         **kwargs
     ) -> None:
         """Creates the flow matching model."""
         print(f"Creating Flow Matching (SBI-style) model with architecture: {architecture}...")
         
-        # Note: In this simple standard interface, we don't usually pass separate context
-        # But if we did (conditional generation), context_dim would effectively be 0 for unconditional
-        # or size of condition. 
-        # For the provided examples (anomaly detection on patches), we often just model p(x).
-        # However, SBI code heavily uses conditioning. 
-        # If unconditional, we can pass dummy context or 0 dim.
+        # Import all models from shared module
+        from .velocity_models import (
+            VectorFieldAdaMLP,
+            VelocityMLPLegacy,
+            VelocityResNet,
+            VelocityResNetFlow,
+            FourierMLP,
+        )
         
         if architecture.lower() == "adamlp":
             self.velocity_model = VectorFieldAdaMLP(
                 input_dim=input_size,
-                context_dim=context_dim, # 0 if unconditional
+                context_dim=context_dim,
                 hidden_features=hidden_features,
                 num_layers=num_layers,
-                time_emb_dim=time_embedding_dim,
+                time_embedding_dim=time_embedding_dim,
                 activation=type(activation)
             )
+            print("  Using VectorFieldAdaMLP architecture")
+            
+        elif architecture.lower() == "mlplegacy":
+            self.velocity_model = VelocityMLPLegacy(
+                input_dim=input_size,
+                hidden_dim=hidden_features,
+                num_layers=num_layers,
+                time_embedding_dim=time_embedding_dim,
+            )
+            print("  Using Legacy MLP architecture")
+            
+        elif architecture.lower() == "resnet":
+            self.velocity_model = VelocityResNet(
+                input_dim=input_size,
+                hidden_dim=hidden_features,
+                num_blocks=num_layers,
+                time_embedding_dim=time_embedding_dim,
+            )
+            print("  Using VelocityResNet architecture")
+            
+        elif architecture.lower() == "resnetflow":
+            self.velocity_model = VelocityResNetFlow(
+                input_dim=input_size,
+                hidden_dim=hidden_features,
+                num_blocks=num_layers,
+                time_embedding_dim=time_embedding_dim,
+                activation=activation if callable(activation) else F.relu,
+                dropout_probability=dropout_probability,
+                use_batch_norm=use_batch_norm,
+            )
+            print("  Using nflows ResidualNet architecture")
+            
+        elif architecture.lower() == "fouriermlp":
+            self.velocity_model = FourierMLP(
+                dim_in=input_size,
+                dim_out=input_size,
+                num_resnet_blocks=num_layers,
+                dim_hidden=hidden_features,
+                activation=activation,
+                time_embedding_dim=time_embedding_dim,
+                **kwargs
+            )
+            print("  Using FourierMLP architecture")
+            
         else:
-            raise ValueError(f"Architecture {architecture} not supported in SBI backend yet. Use 'AdaMLP'.")
+            raise ValueError(
+                f"Unknown architecture: {architecture}. "
+                f"Choose from: 'AdaMLP', 'ResNet', 'ResNetFlow', 'FourierMLP', 'MLPLegacy'"
+            )
+
 
     def print_summary(self):
         if self.velocity_model is None:
@@ -531,11 +395,19 @@ class FlowMatchingSBIBackend(nn.Module):
         log_probs = []
         
         # Integration times: 1.0 -> 0.0 (Data -> Noise)
+        # Integration times: 1.0 -> 0.0 (Data -> Noise)
         t_span = torch.tensor([1.0, 0.0], device=device)
         # Handle fixed step solvers which might need explicit grid
         if solver_method in ['euler', 'rk4', 'midpoint']:
-             # Steps defaults to 100 if not provided
-             t_span = torch.linspace(1, 0, steps, device=device)
+             # Check if step_size was passed in kwargs (test_backends uses it)
+             step_size = kwargs.get('step_size', None)
+             
+             if step_size is not None:
+                 computed_steps = int(1.0 / step_size)
+                 t_span = torch.linspace(1, 0, computed_steps, device=device)
+             else:
+                 # Fallback to 'steps' argument
+                 t_span = torch.linspace(1, 0, steps, device=device)
 
         class ODEFuncLogProb(nn.Module):
             def __init__(self, net, context):
@@ -568,7 +440,7 @@ class FlowMatchingSBIBackend(nn.Module):
         print(f"Computing log-probs on {device} using {solver_method}...")
         
         with torch.no_grad():
-            for batch in tqdm(loader, desc="Log Prob"):
+            for batch in tqdm(loader, desc="Computing log prob"):
                 x_batch = batch[0]
                 
                 # Apply normalization if flag is True AND we have stats

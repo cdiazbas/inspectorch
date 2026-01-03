@@ -34,6 +34,43 @@ Inspectorch includes two flow-based methods:
 
 Explore these scripts to see how to use Inspectorch with your own data. The scripts include comments to guide you through the process.
 
+## Available Backends
+
+Inspectorch provides multiple density estimation backends, each with different trade-offs:
+
+| Backend | Name | Library | Type | Best For |
+| :--- | :--- | :--- | :--- | :--- |
+| `normalizing_flow` | Masked Autoregressive Flow (MAF) | `nflows` | Normalizing Flow | **Fastest inference**, density estimation |
+| `flow_matching_ffm` | Flow Matching (Facebook) | Facebook's `flow_matching` | SBI-style (torchdiffeq ODE) | General purpose, balanced approach |
+| `flow_matching_sbi` | Flow Matching | Pure PyTorch | SBI-style (torchdiffeq ODE) | **Fastest training**, research |
+| `flow_matching_cfm` | Conditional Flow Matching | `torchcfm` | TorchCFM API + SBI fallback | Advanced flow matching methods, fast training |
+
+
+**Standardized Architectures:**
+All Flow Matching backends (`flow_matching`, `flow_matching_sbi`, `flow_matching_cfm`) support the following velocity network architectures:
+*   `AdaMLP` (Default): Adaptive MLP with time embedding injection (Standardized: `hidden_features=64`, `num_layers=2`, `time_embedding_dim=32`).
+*   `ResNet`: Residual Neural Network.
+*   `ResNetFlow`: ResNet adapted for flows (`nflows` style).
+*   `FourierMLP`: MLP with Gaussian Fourier feature mappings.
+*   `MLPLegacy`: Simple concatenated time embedding MLP.
+
+
+**How to use:**
+```python
+from inspectorch import DensityEstimator
+
+# Initialize model
+model = DensityEstimator(type="flow_matching_ffm")
+
+# Create flow with specific architecture
+model.create_flow(input_size=2, architecture="AdaMLP")
+
+# Train
+model.train_flow(train_loader, num_epochs=100)
+
+# Evaluate log likelihood
+log_prob = model.log_prob(test_data)
+```
 
 ## Citation
 

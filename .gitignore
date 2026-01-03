@@ -204,3 +204,4 @@ example/models/*
 mkdocs*
 dont_track*
 *.png
+*.csv
