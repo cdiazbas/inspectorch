@@ -86,7 +86,7 @@ class GeneralizedPatchedDataset(torch.utils.data.Dataset):
         print(f"Dataset initialized with {self.patches.shape[0]} samples.")
         print(f"Each sample is a flattened vector of size {self.patches.shape[1]}.")
 
-        print(f"Input pattern: {self.input_pattern} -> {self.output_pattern}")
+        print(f"Input pattern: {self.input_pattern} {self.output_pattern}")
 
         if dim_reduction is not None:
             # Local import to prevent circular dependencies

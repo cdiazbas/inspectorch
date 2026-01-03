@@ -7,6 +7,8 @@ from sklearn.datasets import make_moons
 import os
 import sys
 import argparse
+import time
+import pandas as pd
 
 # Ensure inspectorch is in path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -83,7 +85,6 @@ def plot_results(name, data, samples, log_probs_grid=None, extent=None):
     plt.title(f"{name}: Log Prob")
     
     plt.tight_layout()
-    plt.tight_layout()
     # Save to script directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
     save_path = os.path.join(script_dir, f"test_backend_{name}.png")
@@ -95,6 +96,14 @@ def plot_results(name, data, samples, log_probs_grid=None, extent=None):
 
 def test_backend(backend_name, data, sequence_length=1):
     print(f"\n{'='*20} Testing Backend: {backend_name} {'='*20}")
+    
+    metrics = {
+        "backend": backend_name,
+        "train_time": 0.0,
+        "log_prob_time": 0.0,
+        "final_loss": None,
+        "mean_log_prob": None
+    }
     
     train_data = data
     input_dim = 2
@@ -109,34 +118,39 @@ def test_backend(backend_name, data, sequence_length=1):
         model = DensityEstimator(type=backend_name)
     except Exception as e:
         print(f"SKIPPING {backend_name}: {e}")
-        return
+        return metrics
 
     # 2. Create Flow
+    # Standardized hyperparameters for flow matching
+    standard_fm_args = {
+        'hidden_features': 64,
+        'num_layers': 2,
+        'architecture': "AdaMLP",
+        'time_embedding_dim': 32
+    }
+    
     kwargs = {}
     if backend_name == "flow_matching_sbi":
-        kwargs['hidden_features'] = 64
-        kwargs['num_transforms'] = 5
+        kwargs.update(standard_fm_args)
         model.create_flow(input_size=input_dim, **kwargs) 
         
     elif backend_name == "normalizing_flow":
-        kwargs['hidden_features'] = 32
+        # Keep NF settings decent but not necessarily same architecture as FM
+        kwargs['hidden_features'] = 64
         kwargs['num_layers'] = 5
         kwargs['num_bins'] = 8 
         model.create_flow(input_size=input_dim, **kwargs)
         
     elif backend_name == "flow_matching_cfm":
-        kwargs['hidden_features'] = 64
-        kwargs['num_layers'] = 3
+        kwargs.update(standard_fm_args)
         kwargs['method'] = "exact" # OT-CFM
-        kwargs['architecture'] = "AdaMLP"
         model.create_flow(input_size=input_dim, **kwargs)
 
-    else: # flow_matching (Default)
-        kwargs['hidden_features'] = 32
-        kwargs['num_layers'] = 5
-        kwargs['architecture'] = "MLP"
-        kwargs['time_embedding_dim'] = 32
-        kwargs['scheduler_n'] = 3.0
+    else: # flow_matching_ffm (Default)
+        kwargs.update(standard_fm_args)
+        # flow_matching might interpret num_layers differently or use hidden_features differently? 
+        # But we unified models, so it should be fine if it passes them to velocity model.
+        # flow_matching.py create_flow accepts num_layers and hidden_features.
         model.create_flow(input_size=input_dim, **kwargs)
         
     print("Model created.")
@@ -161,7 +175,7 @@ def test_backend(backend_name, data, sequence_length=1):
     lp_kwargs = {}
     if "flow_matching" in backend_name:
          # User requested "solver to euler" for speed
-         lp_kwargs = {"solver_method": "euler", "step_size": 0.1}
+         lp_kwargs = {"solver_method": "euler", "step_size": 0.01}
 
     try:
         # Use coarse step_size/tolerances for speed in testing
@@ -177,16 +191,35 @@ def test_backend(backend_name, data, sequence_length=1):
         # Standard LR and Epochs
         lr = 1e-3
         epochs = 100
+        
+        start_time = time.time()
         model.train_flow(train_loader=loader, num_epochs=epochs, learning_rate=lr, save_model=False)
+        end_time = time.time()
+        metrics["train_time"] = end_time - start_time
+        print(f"Training Time: {metrics['train_time']:.4f}s")
+        
+        # Capture training loss
+        if hasattr(model.backend, "training_loss") and model.backend.training_loss:
+            metrics["final_loss"] = model.backend.training_loss[-1]
+        elif hasattr(model, "training_loss") and model.training_loss: # Fallback
+            metrics["final_loss"] = model.training_loss[-1]
+        
     except Exception as e:
         print(f"TRAINING FAILED: {e}")
         import traceback; traceback.print_exc()
-        return
+        return metrics
 
     # 5. Check Trained Log Prob
     try:
+        start_time = time.time()
         lp_trained = model.log_prob(SubsetWrapper(sample_subset), batch_size=10, **lp_kwargs)
+        end_time = time.time()
+        metrics["log_prob_time"] = end_time - start_time
+        metrics["mean_log_prob"] = float(lp_trained.mean())
+        
         print(f"Trained Mean Log Prob: {lp_trained.mean():.4f}")
+        print(f"Log Prob Calculation Time: {metrics['log_prob_time']:.4f}s")
+        
         if lp_trained.mean() > lp.mean():
             print("PASS: Log prob improved.")
         else:
@@ -237,6 +270,8 @@ def test_backend(backend_name, data, sequence_length=1):
         print(f"Grid Viz Failed: {e}")
         import traceback; traceback.print_exc()
         plot_results(backend_name, train_data, samples, None)
+        
+    return metrics
 
 class TLogger:
     """Redirects stream to both the original stream and a file."""
@@ -279,7 +314,7 @@ def main():
     # All available backends
     all_backends = [
         "normalizing_flow",
-        "flow_matching",
+        "flow_matching_ffm",
         "flow_matching_sbi",
         "flow_matching_cfm"
     ]
@@ -297,13 +332,33 @@ def main():
         backends = all_backends
         print(f"Testing all backends: {', '.join(backends)}")
     
+    results = []
     for b in backends:
         try:
-            test_backend(b, data)
+            m = test_backend(b, data)
+            results.append(m)
         except Exception as e:
             print(f"FATAL ERROR TESTING {b}: {e}")
             import traceback
             traceback.print_exc()
+            
+    # Print Summary
+    print("\n" + "="*50)
+    print("BENCHMARK SUMMARY")
+    print("="*50)
+    df = pd.DataFrame(results)
+    if not df.empty:
+        # Standardize NaN
+        df = df.fillna("N/A")
+        # Print table
+        print(df.to_string(index=False))
+        
+        # Save to CSV
+        csv_path = os.path.join(script_dir, "benchmark_results.csv")
+        df.to_csv(csv_path, index=False)
+        print(f"\nSaved results to {csv_path}")
+    else:
+        print("No results collected.")
 
 if __name__ == "__main__":
     main()

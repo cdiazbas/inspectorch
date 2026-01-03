@@ -213,7 +213,7 @@ class NormalizingFlowBackend(nn.Module):
 
         from tqdm import tqdm
 
-        for i in tqdm(range(0, inputs.shape[0], batch_size)):
+        for i in tqdm(range(0, inputs.shape[0], batch_size), desc="Computing log prob"):
             batch = inputs[i : i + batch_size].to(
                 next(self.flow_model.parameters()).device
             )

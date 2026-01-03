@@ -85,13 +85,12 @@ train_loader = torch.utils.data.DataLoader(
 
 
 # Build the Flow Matching model for density estimation
-model = DensityEstimator(type="flow_matching")
+model = DensityEstimator(type="flow_matching_ffm")
 model.create_flow(
     input_size=dataset.flow_dim,
-    num_layers=5,
-    hidden_features=32,
-    scheduler_n=3.0,  # Polynomial convex scheduler (flow matching specific)
-    architecture="MLP",  # Options: "MLP" or "ResNet"
+    num_layers=2,
+    hidden_features=64,
+    architecture="AdaMLP",  # Options: "AdaMLP", "ResNet", "ResNetFlow", "FourierMLP"
     time_embedding_dim=32,
 )
 

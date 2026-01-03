@@ -2,7 +2,8 @@ import torch.nn as nn
 import numpy as np
 
 from .normalizing_flow import NormalizingFlowBackend
-from .flow_matching import FlowMatchingBackend
+from .normalizing_flow import NormalizingFlowBackend
+from .flow_matching_ffm import FlowMatchingBackend as FlowMatchingFFMBackend
 from .flow_matching_sbi import FlowMatchingSBIBackend
 
 
@@ -14,7 +15,7 @@ class DensityEstimator(nn.Module):
 
     Args:
         type (str): The type of density estimator to use.
-                    Options: "normalizing_flow" (default), "flow_matching", or "flow_matching_sbi".
+                    Options: "normalizing_flow" (default), "flow_matching_ffm", or "flow_matching_sbi".
         *args: Additional positional arguments passed to the backend constructor.
         **kwargs: Additional keyword arguments passed to the backend constructor.
     """
@@ -25,8 +26,8 @@ class DensityEstimator(nn.Module):
 
         if self.type == "normalizing_flow":
             self.backend = NormalizingFlowBackend(*args, **kwargs)
-        elif self.type == "flow_matching":
-            self.backend = FlowMatchingBackend(*args, **kwargs)
+        elif self.type == "flow_matching_ffm":
+            self.backend = FlowMatchingFFMBackend(*args, **kwargs)
         elif self.type == "flow_matching_sbi":
             self.backend = FlowMatchingSBIBackend(*args, **kwargs)
         elif self.type == "flow_matching_cfm":
@@ -34,7 +35,7 @@ class DensityEstimator(nn.Module):
             self.backend = FlowMatchingCFMBackend(*args, **kwargs)
         else:
             raise ValueError(
-                f"Unknown type: {type}. Choose 'normalizing_flow', 'flow_matching', 'flow_matching_sbi', or 'flow_matching_cfm'."
+                f"Unknown type: {type}. Choose 'normalizing_flow', 'flow_matching_ffm', 'flow_matching_sbi', or 'flow_matching_cfm'."
             )
 
     @property
@@ -49,6 +50,14 @@ class DensityEstimator(nn.Module):
     def create_flow(self, *args, **kwargs) -> None:
         """
         Forward creation call to backend.
+
+        Common Parameters for Flow Matching backends:
+        - input_size (int): Dimension of input features.
+        - hidden_features (int): Number of hidden units (Default: 64).
+        - num_layers (int): Number of layers in velocity network (Default: 2).
+        - architecture (str): Velocity network architecture. Default: "AdaMLP".
+                              Options: "AdaMLP", "ResNet", "ResNetFlow", "FourierMLP", "MLPLegacy".
+        - time_embedding_dim (int): Dimension of time embeddings (Default: 32).
         """
         self.backend.create_flow(*args, **kwargs)
 
