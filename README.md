@@ -29,10 +29,10 @@ pip install .
 ## Usage
 
 Inspectorch includes two flow-based methods:
-1. **Normalizing Flows** (for accuracy): Recommended for high precision density estimation. See `inspectorch/example/example.py`.
-2. **Flow Matching** (for scalability): Recommended for larger datasets or higher dimensions where scalability is a concern. See `inspectorch/example/example_mflow.py`.
+1. **Normalizing Flows** (for accuracy): Recommended for high precision density estimation. See [`example/example_normalizing_flow.py`](file:///mn/stornext/d20/RoCS/carlosjd/projects/INSPECTORCH/inspectorch/example/example_normalizing_flow.py).
+2. **Flow Matching** (for scalability): Recommended for larger datasets or higher dimensions where scalability is a concern. See [`example/example_flow_matching.py`](file:///mn/stornext/d20/RoCS/carlosjd/projects/INSPECTORCH/inspectorch/example/example_flow_matching.py).
 
-Explore these scripts to see how to use Inspectorch with your own data. The scripts include comments to guide you through the process.
+Explore these scripts to see how to use Inspectorch with your own data. The scripts include comments to guide you through the process. For multidimensional solar data (e.g. 3D cubes with dimensions like `y, wav, x`), we recommend using the `GeneralizedPatchedDataset` to handle patch extraction and normalization automatically.
 
 ## Available Backends
 
@@ -57,18 +57,23 @@ All Flow Matching backends (`flow_matching`, `flow_matching_sbi`, `flow_matching
 
 **How to use:**
 ```python
-from inspectorch import DensityEstimator
+import torch
+from inspectorch import DensityEstimator, GeneralizedPatchedDataset
 
-# Initialize model
+# 1. Prepare your data (e.g., a 3D spectral cube [y, wav, x])
+# dataset = GeneralizedPatchedDataset(data, dim_names="y wav x", feature_dims=["wav"])
+# train_loader = torch.utils.data.DataLoader(dataset, batch_size=1024, shuffle=True)
+
+# 2. Initialize model
 model = DensityEstimator(type="flow_matching_ffm")
 
-# Create flow with specific architecture
-model.create_flow(input_size=2, architecture="AdaMLP")
+# 3. Create flow with specific architecture
+model.create_flow(input_size=data_dim, architecture="AdaMLP", hidden_features=64, num_layers=2)
 
-# Train
-model.train_flow(train_loader, num_epochs=100)
+# 4. Train
+model.train_flow(train_loader, num_epochs=100, learning_rate=1e-3, device="cuda")
 
-# Evaluate log likelihood
+# 5. Evaluate log likelihood
 log_prob = model.log_prob(test_data)
 ```
 

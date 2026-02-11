@@ -2,6 +2,7 @@ from .density_estimator import DensityEstimator
 from .normalizing_flow import NormalizingFlowBackend
 from .flow_matching_ffm import FlowMatchingBackend as FlowMatchingFFMBackend
 from .flow_matching_sbi import FlowMatchingSBIBackend
+from .flow_matching_cfm import FlowMatchingCFMBackend
 
 from .datasets import GeneralizedPatchedDataset
 
@@ -10,6 +11,7 @@ __all__ = [
     "NormalizingFlowBackend",
     "FlowMatchingFFMBackend",
     "FlowMatchingSBIBackend",
+    "FlowMatchingCFMBackend",
     "GeneralizedPatchedDataset",
 ]
 
