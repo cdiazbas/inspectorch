@@ -1,11 +1,11 @@
 """
 Velocity field models for flow matching.
 
-This module contains neural network architectures for learning
-velocity fields in continuous normalizing flows and flow matching.
+This module contains neural network architectures for learning velocity
+fields in continuous normalizing flows and flow matching.
 
-All flow matching backends should import from this shared module
-to avoid code duplication and ensure consistency.
+All flow matching backends should import from this shared module to
+avoid code duplication and ensure consistency.
 """
 
 import torch
@@ -17,6 +17,7 @@ from typing import Optional
 # Optional dependency for ResNetFlow architecture
 try:
     from nflows.nn import nets
+
     NFLOWS_AVAILABLE = True
 except ImportError:
     NFLOWS_AVAILABLE = False
@@ -26,9 +27,14 @@ except ImportError:
 # Time Embeddings
 # =============================================================================
 
+
 class SinusoidalTimeEmbedding(nn.Module):
-    """Sinusoidal time embedding as used in Vaswani et al. (2017)."""
-    
+    """
+    Sinusoidal time embedding as used in Vaswani et al.
+
+    (2017).
+    """
+
     def __init__(self, embed_dim: int = 16, max_freq: float = 1000.0):
         super().__init__()
         if embed_dim % 2 != 0:
@@ -45,7 +51,7 @@ class SinusoidalTimeEmbedding(nn.Module):
             t = t.unsqueeze(0)
         if t.ndim == 1:
             t = t.unsqueeze(-1)
-            
+
         time_embedding = torch.zeros(t.shape[:-1] + (self.embed_dim,), device=t.device)
         time_embedding[..., 0::2] = torch.sin(t * self.div_term)
         time_embedding[..., 1::2] = torch.cos(t * self.div_term)
@@ -53,8 +59,10 @@ class SinusoidalTimeEmbedding(nn.Module):
 
 
 class RandomFourierTimeEmbedding(nn.Module):
-    """Gaussian random features for encoding time steps."""
-    
+    """
+    Gaussian random features for encoding time steps.
+    """
+
     def __init__(self, embed_dim: int = 100, scale: float = 30.0):
         super().__init__()
         self.embed_dim = embed_dim
@@ -65,7 +73,7 @@ class RandomFourierTimeEmbedding(nn.Module):
             t = t.view(1, 1)
         elif t.ndim == 1:
             t = t.unsqueeze(-1)
-        
+
         times_proj = t * self.W[None, :] * 2 * math.pi
         embedding = torch.cat([torch.sin(times_proj), torch.cos(times_proj)], dim=-1)
         return embedding
@@ -75,15 +83,18 @@ class RandomFourierTimeEmbedding(nn.Module):
 # AdaMLP Components
 # =============================================================================
 
+
 class AdaMLPBlock(nn.Module):
-    """Residual MLP block with adaptive layer norm for conditioning."""
-    
+    """
+    Residual MLP block with adaptive layer norm for conditioning.
+    """
+
     def __init__(
         self,
         hidden_features: int,
         cond_dim: int,
         mlp_ratio: int = 4,
-        activation: type[nn.Module] = nn.GELU
+        activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__()
         self.ada_ln = nn.Sequential(
@@ -111,8 +122,10 @@ class AdaMLPBlock(nn.Module):
 
 
 class GlobalEmbeddingMLP(nn.Module):
-    """Computes global embedding from time and context."""
-    
+    """
+    Computes global embedding from time and context.
+    """
+
     def __init__(
         self,
         input_dim: int,
@@ -120,7 +133,7 @@ class GlobalEmbeddingMLP(nn.Module):
         time_embedding_dim: int = 32,
         hidden_features: int = 100,
         time_emb_type: str = "sinusoidal",
-        activation: type[nn.Module] = nn.GELU
+        activation: type[nn.Module] = nn.GELU,
     ):
         super().__init__()
         if time_emb_type == "sinusoidal":
@@ -130,7 +143,7 @@ class GlobalEmbeddingMLP(nn.Module):
 
         # Input to MLP is concatenated time_emb + context
         self.input_layer = nn.Linear(time_embedding_dim + input_dim, hidden_features)
-        
+
         self.mlp = nn.Sequential(
             activation(),
             nn.Linear(hidden_features, hidden_features),
@@ -139,17 +152,19 @@ class GlobalEmbeddingMLP(nn.Module):
         )
         self.output_layer = nn.Linear(hidden_features, output_dim)
 
-    def forward(self, t: torch.Tensor, x_emb: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(
+        self, t: torch.Tensor, x_emb: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         t_emb = self.time_emb(t)  # (batch, time_embedding_dim)
-        
+
         if x_emb is not None:
             # Flatten or ensure shape compatibility
             if x_emb.ndim > 2:
-                x_emb = x_emb.view(x_emb.shape[0], -1) 
+                x_emb = x_emb.view(x_emb.shape[0], -1)
             cond_emb = torch.cat([t_emb, x_emb], dim=-1)
         else:
             cond_emb = t_emb
-            
+
         h = self.input_layer(cond_emb)
         h = self.mlp(h)
         return self.output_layer(h)
@@ -159,14 +174,15 @@ class GlobalEmbeddingMLP(nn.Module):
 # Main Velocity Field Architectures
 # =============================================================================
 
+
 class VectorFieldAdaMLP(nn.Module):
     """
     Adaptive MLP Vector Field Network (Recommended).
-    
+
     Uses AdaMLP blocks where time/context modulate features via AdaLN.
     This is the default architecture for all flow matching backends.
     """
-    
+
     def __init__(
         self,
         input_dim: int,
@@ -178,21 +194,21 @@ class VectorFieldAdaMLP(nn.Module):
     ):
         super().__init__()
         self.input_dim = input_dim
-        
+
         # Global embedding network (Time + Context -> Embedding)
-        self.cond_emb_dim = hidden_features 
-        
+        self.cond_emb_dim = hidden_features
+
         self.global_mlp = GlobalEmbeddingMLP(
             input_dim=context_dim,
             output_dim=self.cond_emb_dim,
             time_embedding_dim=time_embedding_dim,
             hidden_features=hidden_features,
-            activation=activation
+            activation=activation,
         )
 
         # Main Network
         self.layers = nn.ModuleList()
-        
+
         # Input projection
         self.layers.append(nn.Linear(input_dim, hidden_features))
 
@@ -202,21 +218,18 @@ class VectorFieldAdaMLP(nn.Module):
                 AdaMLPBlock(
                     hidden_features=hidden_features,
                     cond_dim=self.cond_emb_dim,
-                    activation=activation
+                    activation=activation,
                 )
             )
 
         # Output projection
-        self.final_layer = nn.Linear(hidden_features, input_dim) 
+        self.final_layer = nn.Linear(hidden_features, input_dim)
         # Initialize output to zero for stability
         nn.init.zeros_(self.final_layer.weight)
         nn.init.zeros_(self.final_layer.bias)
 
     def forward(
-        self,
-        t: torch.Tensor,
-        x: torch.Tensor,
-        context: Optional[torch.Tensor] = None
+        self, t: torch.Tensor, x: torch.Tensor, context: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
         Args:
@@ -226,30 +239,30 @@ class VectorFieldAdaMLP(nn.Module):
         """
         # Get conditioning embedding
         cond_emb = self.global_mlp(t, x_emb=context)  # (batch, cond_emb_dim)
-        
+
         # Forward pass
         h = x
         h = self.layers[0](h)  # Input projection
-        
+
         for layer in self.layers[1:]:
             h = layer(h, cond_emb)
-            
+
         return self.final_layer(h)
 
 
 class VelocityMLPLegacy(nn.Module):
     """
     Legacy simple MLP velocity network (for backward compatibility).
-    
+
     Note: VectorFieldAdaMLP is recommended over this architecture.
     """
-    
+
     def __init__(
         self,
         input_dim: int,
         hidden_dim: int = 128,
         num_layers: int = 3,
-        time_embedding_dim: int = 32
+        time_embedding_dim: int = 32,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -303,14 +316,16 @@ class VelocityMLPLegacy(nn.Module):
 
 
 class VelocityResNet(nn.Module):
-    """ResNet-style velocity network for flow matching."""
-    
+    """
+    ResNet-style velocity network for flow matching.
+    """
+
     def __init__(
         self,
         input_dim: int,
         hidden_dim: int = 128,
         num_blocks: int = 3,
-        time_embedding_dim: int = 32
+        time_embedding_dim: int = 32,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -369,8 +384,10 @@ class VelocityResNet(nn.Module):
 
 
 class ResidualBlock(nn.Module):
-    """Residual block for VelocityResNet."""
-    
+    """
+    Residual block for VelocityResNet.
+    """
+
     def __init__(self, hidden_dim: int):
         super().__init__()
         self.net = nn.Sequential(
@@ -386,11 +403,12 @@ class ResidualBlock(nn.Module):
 class VelocityResNetFlow(nn.Module):
     """
     Velocity network using nflows.nn.nets.ResidualNet.
-    
+
     This uses the same ResidualNet architecture from nflows that is used
-    in normalizing flows, adapted for flow matching with time conditioning.
+    in normalizing flows, adapted for flow matching with time
+    conditioning.
     """
-    
+
     def __init__(
         self,
         input_dim: int,
@@ -463,8 +481,10 @@ class VelocityResNetFlow(nn.Module):
 
 
 class FourierMLP(nn.Module):
-    """MLP with Fourier features for velocity field."""
-    
+    """
+    MLP with Fourier features for velocity field.
+    """
+
     def __init__(
         self,
         dim_in: int,
@@ -494,7 +514,7 @@ class FourierMLP(nn.Module):
         self.tune_beta = tune_beta
         self.sigma = sigma
         num_neurons = dim_hidden
-        
+
         if tune_beta:
             self.beta0 = nn.Parameter(torch.ones(1, 1))
             self.beta = nn.Parameter(
