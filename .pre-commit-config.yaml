@@ -35,7 +35,3 @@ repos:
       - id: check-yaml
       - id: debug-statements
   # See https://github.com/python-trio/trio/pull/3255
-  - repo: https://github.com/adhtruong/mirrors-typos
-    rev: v1.32.0
-    hooks:
-      - id: typos

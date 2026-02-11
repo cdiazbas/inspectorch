@@ -2,10 +2,8 @@ import torch.nn as nn
 import numpy as np
 
 from .normalizing_flow import NormalizingFlowBackend
-from .normalizing_flow import NormalizingFlowBackend
 from .flow_matching_ffm import FlowMatchingBackend as FlowMatchingFFMBackend
 from .flow_matching_sbi import FlowMatchingSBIBackend
-
 
 
 class DensityEstimator(nn.Module):
@@ -32,6 +30,7 @@ class DensityEstimator(nn.Module):
             self.backend = FlowMatchingSBIBackend(*args, **kwargs)
         elif self.type == "flow_matching_cfm":
             from .flow_matching_cfm import FlowMatchingCFMBackend
+
             self.backend = FlowMatchingCFMBackend(*args, **kwargs)
         else:
             raise ValueError(

@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
 import time
-import math
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.stats import norm
@@ -15,10 +13,11 @@ from . import datasets
 try:
     from flow_matching.path import AffineProbPath
     from flow_matching.solver import ODESolver
+
     FLOW_MATCHING_AVAILABLE = True
 except ImportError:
     raise ImportError(
-        "\n" + "="*70 + "\n"
+        "\n" + "=" * 70 + "\n"
         "ERROR: flow_matching library is required for FlowMatchingBackend\n"
         "\n"
         "Install with:\n"
@@ -26,20 +25,20 @@ except ImportError:
         "\n"
         "Or install from source:\n"
         "  git clone https://github.com/facebookresearch/flow_matching\n"
-        "  cd flow_matching && pip install -e .\n"
-        + "="*70
+        "  cd flow_matching && pip install -e .\n" + "=" * 70
     )
 
 # Optional dependency: torchdiffeq (Used for manual log_prob)
 try:
     from torchdiffeq import odeint
+
     TORCHDIFFEQ_AVAILABLE = True
 except ImportError:
     TORCHDIFFEQ_AVAILABLE = False
 
 # Import nflows ResidualNet for ResNetFlow architecture
 try:
-    from nflows.nn import nets
+    pass
 
     NFLOWS_AVAILABLE = True
 except ImportError:
@@ -72,7 +71,6 @@ from .velocity_models import (
     VelocityResNetFlow,
     FourierMLP,
 )
-
 
 
 # =============================================================================
@@ -172,25 +170,28 @@ class FlowMatchingBackend(nn.Module):
             # Backward compatibility warning
             if architecture.lower() == "mlp":
                 import warnings
+
                 warnings.warn(
                     "architecture='MLP' is deprecated. Use 'AdaMLP' instead.",
                     DeprecationWarning,
-                    stacklevel=2
+                    stacklevel=2,
                 )
-            
+
             # Handle activation type vs instance
-            act_type = type(activation) if isinstance(activation, nn.Module) else activation
-            
+            act_type = (
+                type(activation) if isinstance(activation, nn.Module) else activation
+            )
+
             self.velocity_model = VectorFieldAdaMLP(
                 input_dim=input_size,
-                context_dim=0, # Unconditional by default
+                context_dim=0,  # Unconditional by default
                 hidden_features=hidden_features,
                 num_layers=num_layers,
                 time_embedding_dim=time_embedding_dim,
-                activation=act_type
+                activation=act_type,
             )
             print("  Using VectorFieldAdaMLP (AdaMLP) architecture")
-            
+
         elif architecture.lower() == "mlplegacy":
             # Legacy support
             self.velocity_model = VelocityMLPLegacy(
@@ -201,7 +202,6 @@ class FlowMatchingBackend(nn.Module):
             )
             print("  Using Legacy MLP architecture")
 
-            
         elif architecture.lower() == "resnet":
             self.velocity_model = VelocityResNet(
                 input_dim=input_size,
@@ -359,26 +359,26 @@ class FlowMatchingBackend(nn.Module):
 
                 # --- FORWARD DIRECTION (Noise to Data) ---
                 if training_mode == "forward_SBI":
-                     # Explicit SBI-style implementation to bypass library abstractions
-                     # x0 = noise, x1 = data
-                     # t_sample is (batch,)
-                     
-                     t_expand = t_sample.view(-1, *([1]*(x1.ndim - 1)))
-                     
-                     # 1. Path: linear interpolation
-                     x_t = (1 - t_expand) * x0 + t_expand * x1
-                     
-                     # 2. Target Velocity: x1 - x0
-                     v_target = x1 - x0
-                     
-                     # 3. Predict
-                     # Model takes t with shape (batch,) or (batch, 1) usually
-                     t_in = t_sample.unsqueeze(1) # (batch, 1)
-                     vt_pred = active_model(t_in, x_t)
-                     
-                     # 4. Loss (Standard MSE)
-                     loss_f = torch.mean((vt_pred - v_target) ** 2)
-                     loss += loss_f
+                    # Explicit SBI-style implementation to bypass library abstractions
+                    # x0 = noise, x1 = data
+                    # t_sample is (batch,)
+
+                    t_expand = t_sample.view(-1, *([1] * (x1.ndim - 1)))
+
+                    # 1. Path: linear interpolation
+                    x_t = (1 - t_expand) * x0 + t_expand * x1
+
+                    # 2. Target Velocity: x1 - x0
+                    v_target = x1 - x0
+
+                    # 3. Predict
+                    # Model takes t with shape (batch,) or (batch, 1) usually
+                    t_in = t_sample.unsqueeze(1)  # (batch, 1)
+                    vt_pred = active_model(t_in, x_t)
+
+                    # 4. Loss (Standard MSE)
+                    loss_f = torch.mean((vt_pred - v_target) ** 2)
+                    loss += loss_f
 
                 elif training_mode in ["forward", "both"]:
                     # ProbPath typically assumes x0=noise, x1=data
@@ -448,26 +448,30 @@ class FlowMatchingBackend(nn.Module):
         atol: float = 1e-5,
         rtol: float = 1e-5,
         exact_divergence: bool = False,
-        step_size: float = 0.01, # Default to 0.01 (100 steps)
-        steps: Optional[int] = None, # Accept explicit steps count
+        step_size: float = 0.01,  # Default to 0.01 (100 steps)
+        steps: Optional[int] = None,  # Accept explicit steps count
     ) -> np.ndarray:
         """
         Computes log-probability of inputs using ODE integration with
-        instantaneous change of variables.
-        Uses manual torchdiffeq implementation for consistency with SBI backend.
-        
+        instantaneous change of variables. Uses manual torchdiffeq
+        implementation for consistency with SBI backend.
+
         Args:
            steps: Optional override for step_size (step_size = 1/steps)
         """
         if not TORCHDIFFEQ_AVAILABLE:
-             print("Warning: torchdiffeq not installed. Falling back to flow_matching ODESolver (if available).")
-             # Fallback logic could go here, but for now we enforce consistent behavior or error
-             raise ImportError("torchdiffeq is required for the updated log_prob implementation.")
+            print(
+                "Warning: torchdiffeq not installed. Falling back to flow_matching ODESolver (if available)."
+            )
+            # Fallback logic could go here, but for now we enforce consistent behavior or error
+            raise ImportError(
+                "torchdiffeq is required for the updated log_prob implementation."
+            )
 
         self.velocity_model.eval()
         utils.configure_device(self, device)
         self.velocity_model.to(device)
-        
+
         # Handle step size logic
         if steps is not None:
             step_size = 1.0 / steps
@@ -493,21 +497,23 @@ class FlowMatchingBackend(nn.Module):
 
         # Data Loading
         dataset = torch.utils.data.TensorDataset(data)
-        loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        loader = torch.utils.data.DataLoader(
+            dataset, batch_size=batch_size, shuffle=False
+        )
 
         log_probs = []
-        
+
         # Integration times: 1.0 -> 0.0 (Data -> Noise)
         t_span = torch.tensor([1.0, 0.0], device=device)
-        
+
         # Handle fixed step solvers or manual steps
         # If solver is fixed step (euler, rk4) we need grid.
         # Even adaptive solvers can benefit from evaluation points if 'steps' is strictly required?
         # Standard ODESolver in library handles "step_size" for fixed.
         # We will use common logic:
-        if solver_method in ['euler', 'rk4', 'midpoint'] or steps is not None:
-             num_steps = int(1.0 / step_size) if steps is None else steps
-             t_span = torch.linspace(1, 0, num_steps, device=device)
+        if solver_method in ["euler", "rk4", "midpoint"] or steps is not None:
+            num_steps = int(1.0 / step_size) if steps is None else steps
+            t_span = torch.linspace(1, 0, num_steps, device=device)
 
         # Define fused ODE function (Divergence + Velocity)
         class ODEFuncLogProb(nn.Module):
@@ -517,7 +523,7 @@ class FlowMatchingBackend(nn.Module):
 
             def forward(self, t, states):
                 x = states[0]
-                
+
                 # Compute gradients inside forward to avoid double evaluation
                 with torch.set_grad_enabled(True):
                     x.requires_grad_(True)
@@ -525,61 +531,67 @@ class FlowMatchingBackend(nn.Module):
                     # We don't have 'context' in this generic backend usually, but AdaMLP might supports it.
                     # Current FlowMatchingBackend doesn't support generic context passing in log_prob yet.
                     # VectorFieldAdaMLP supports context=None.
-                    v = self.net(t_expand, x) 
-                    
-                    if not exact_divergence: # Hutchinson
+                    v = self.net(t_expand, x)
+
+                    if not exact_divergence:  # Hutchinson
                         epsilon = torch.randn_like(x)
                         v_eps = torch.sum(v * epsilon)
-                        grad_v_eps = torch.autograd.grad(v_eps, x, create_graph=False)[0]
+                        grad_v_eps = torch.autograd.grad(v_eps, x, create_graph=False)[
+                            0
+                        ]
                         div = torch.sum(grad_v_eps * epsilon, dim=-1)
-                    else: # Exact
+                    else:  # Exact
                         div = 0.0
                         for i in range(x.shape[1]):
-                            grad_v_i = torch.autograd.grad(v[:, i].sum(), x, create_graph=False, retain_graph=True)[0]
+                            grad_v_i = torch.autograd.grad(
+                                v[:, i].sum(), x, create_graph=False, retain_graph=True
+                            )[0]
                             div += grad_v_i[:, i]
-                
+
                 return v, -div
 
         print(f"Computing log-probs on {device} using {solver_method}...")
-        
+
         with torch.no_grad():
             for batch in tqdm(loader, desc="Computing log prob"):
                 x_batch = batch[0]
-                
+
                 # Apply normalization if necessary
                 if apply_mean_std_adjustment and self.y_mean is not None:
-                     # Ensure stats are on device
-                     if self.y_mean.device != device:
-                         self.y_mean = self.y_mean.to(device)
-                         self.y_std = self.y_std.to(device)
-                     x_batch = (x_batch.to(device) - self.y_mean) / self.y_std
+                    # Ensure stats are on device
+                    if self.y_mean.device != device:
+                        self.y_mean = self.y_mean.to(device)
+                        self.y_std = self.y_std.to(device)
+                    x_batch = (x_batch.to(device) - self.y_mean) / self.y_std
                 else:
-                     x_batch = x_batch.to(device)
+                    x_batch = x_batch.to(device)
 
                 batch_n = x_batch.shape[0]
                 zeros = torch.zeros(batch_n, device=device)
-                
+
                 func = ODEFuncLogProb(self.velocity_model)
-                
+
                 # Integrate
                 state = odeint(
-                    func, 
-                    (x_batch, zeros), 
-                    t_span, 
-                    method=solver_method, 
-                    atol=atol, 
-                    rtol=rtol
+                    func,
+                    (x_batch, zeros),
+                    t_span,
+                    method=solver_method,
+                    atol=atol,
+                    rtol=rtol,
                 )
-                
+
                 x_final = state[0][-1]
                 delta_log_p = state[1][-1]
-                
+
                 # Log p(z) (Standard Normal)
                 d = x_final.shape[1]
-                log_p_z = -0.5 * d * np.log(2 * np.pi) - 0.5 * torch.sum(x_final**2, dim=1)
-                
+                log_p_z = -0.5 * d * np.log(2 * np.pi) - 0.5 * torch.sum(
+                    x_final**2, dim=1
+                )
+
                 # log p(x) = log p(z) - delta_log_p
-                # (Note: Jacobian trace calculation: div = tr(dv/dx). 
+                # (Note: Jacobian trace calculation: div = tr(dv/dx).
                 # ODE for log_p: d/dt logp = - div.
                 # Integrated: logp(0) - logp(1) = int_1^0 -div dt = - int_0^1 -div dt = int div.
                 # logp(1) = logp(0) - int div.
@@ -589,8 +601,8 @@ class FlowMatchingBackend(nn.Module):
                 # Formula: log p(x) = log p(z) + int_0^1 div v_t(x_t) dt
                 # Our integration is 1->0.
                 # Let's trust the SBI implementation which was verified.)
-                
-                batch_log_prob = log_p_z - delta_log_p 
+
+                batch_log_prob = log_p_z - delta_log_p
                 log_probs.append(batch_log_prob.cpu().numpy())
 
         self.velocity_model.to("cpu")
@@ -610,11 +622,15 @@ class FlowMatchingBackend(nn.Module):
         step_size: float = 0.1,
     ) -> np.ndarray:
         """
-        Computes log-probability using the ORIGINAL logic (via external flow_matching library).
+        Computes log-probability using the ORIGINAL logic (via external
+        flow_matching library).
+
         Use this to verify against the new torchdiffeq-based log_prob.
         """
         if not FLOW_MATCHING_AVAILABLE:
-             raise ImportError("flow_matching library is required for log_prob_original.")
+            raise ImportError(
+                "flow_matching library is required for log_prob_original."
+            )
 
         self.velocity_model.eval()
         utils.configure_device(self, device)
@@ -653,7 +669,8 @@ class FlowMatchingBackend(nn.Module):
 
         with torch.no_grad():
             for i in tqdm(
-                range(0, data.shape[0], batch_size), desc="Computing log-prob (original)"
+                range(0, data.shape[0], batch_size),
+                desc="Computing log-prob (original)",
             ):
                 batch = data[i : i + batch_size].to(device)
 
