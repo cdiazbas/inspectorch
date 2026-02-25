@@ -1,6 +1,6 @@
 # Inspectorch: Efficient rare event exploration with normalizing flows
 
-This repository contains the code for the paper "Inspectorch: Efficient rare event exploration with normalizing flows" (arXiv:X).
+This repository contains the code for the paper "Inspectorch: Efficient rare event exploration with normalizing flows", available at http://arxiv.org/abs/2602.20316
 
 ## Abstract
 With current and future solar telescopes, the Sun is observed in unprecedented detail, making it possible to study its activity on very small scales. As a result, large volumes of data are collected that cannot be reasonably analyzed with conventional methods. Automatic methods based on machine learning can be optimized to identify general trends from observations. However, these methods tend to overlook unique and rare events due to their low frequency of occurrence. We aim to develop a method to efficiently identify rare events in multidimensional solar observations where existing classic approaches fail. We use normalizing flows, a flexible density estimator, to model the multidimensional distribution of solar spectra. After training, the normalizing flow assigns a probability to each sample, allowing us to identify rare events. We illustrate the potential of this method by applying it to observations from the Hinode Spectro-Polarimeter (Hinode/SP), the CRisp Imaging SpectroPolarimeter (CRISP) at Swedish 1-m Solar Telescope (SST), the Interface Region Imaging Spectrograph (IRIS) and the Microlensed Hyperspectral Imager (MiHI). On those datasets, we identify extreme spectra in the data that occupy a tiny percentage of the total number of samples and are overlooked by traditional clustering methods. The probabilistic nature of the method makes it ideal for implementing denoising algorithms while preserving the rare events and investigating the correlation between different spectral lines.Density estimators like normalizing flows can be a powerful tool to identify rare events in extensive datasets. The method requires minimal parameter tuning and can be applied to large data sets with minimal effort. With these methods we can optimize our resources to apply them to the most interesting events of our observations.
@@ -65,21 +65,21 @@ from inspectorch import DensityEstimator, GeneralizedPatchedDataset
 # train_loader = torch.utils.data.DataLoader(dataset, batch_size=1024, shuffle=True)
 
 # 2. Initialize model
-model = DensityEstimator(type="flow_matching_ffm")
+model = DensityEstimator(type="normalizing_flow")
 
 # 3. Create flow with specific architecture
-model.create_flow(input_size=data_dim, architecture="AdaMLP", hidden_features=64, num_layers=2)
+model.create_flow(input_size=data_dim, num_layers=5, hidden_features=32, num_bins=8)
 
 # 4. Train
 model.train_flow(train_loader, num_epochs=100, learning_rate=1e-3, device="cuda")
 
 # 5. Evaluate log likelihood
-log_prob = model.log_prob(test_data)
+log_prob = model.log_prob(dataset)
 ```
 
 ## Citation
 
-If you use Inspectorch in your research, please cite the corresponding paper (arXiv:X).
+If you use Inspectorch in your research, please cite the corresponding paper (arXiv:2602.20316).
 
 ## For development purposes
 
