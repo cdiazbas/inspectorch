@@ -11,6 +11,7 @@ authors = [
 license = { text = "MIT" }
 readme = "README.md"
 requires-python = ">=3.9"
+dynamic = ["version"]
 keywords = ["normalizing flows", "rare events", "machine learning"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -50,10 +51,6 @@ all = [
     "seaborn",  # viz
 ]
 
-
-# version will be taken from git tags
-dynamic = ["version"]
-
 [project.urls]
 Homepage = "https://github.com/cdiazbas/inspectorch"
 
@@ -61,6 +58,6 @@ Homepage = "https://github.com/cdiazbas/inspectorch"
 packages = ["inspectorch"]
 
 [tool.setuptools_scm]
-version_scheme = "no-guess-dev"  # or "post-release"
-local_scheme = "node-and-date"
+version_scheme = "no-guess-dev"
+local_scheme = "no-local-version"
 fallback_version = "1.0.dev0"
