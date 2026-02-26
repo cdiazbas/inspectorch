@@ -469,7 +469,8 @@ class FlowMatchingBackend(nn.Module):
             )
 
         self.velocity_model.eval()
-        utils.configure_device(self, device)
+        # Use smart device resolution (fallback CUDA -> MPS -> CPU)
+        _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
         # Handle step size logic
@@ -633,7 +634,8 @@ class FlowMatchingBackend(nn.Module):
             )
 
         self.velocity_model.eval()
-        utils.configure_device(self, device)
+        # Use smart device resolution (fallback CUDA -> MPS -> CPU)
+        _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
         # Get data
