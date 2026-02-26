@@ -357,7 +357,8 @@ class FlowMatchingSBIBackend(nn.Module):
             raise ImportError("torchdiffeq is required for log_prob.")
 
         self.velocity_model.eval()
-        utils.configure_device(self, device)
+        # Use smart device resolution (fallback CUDA -> MPS -> CPU)
+        _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
         # 1. Handle Inputs (Dataset vs Tensor)

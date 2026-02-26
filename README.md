@@ -71,7 +71,8 @@ model = DensityEstimator(type="normalizing_flow")
 model.create_flow(input_size=data_dim, num_layers=5, hidden_features=32, num_bins=8)
 
 # 4. Train
-model.train_flow(train_loader, num_epochs=100, learning_rate=1e-3, device="cuda")
+model.train_flow(train_loader, num_epochs=100, learning_rate=1e-3, device="auto")
+# `device="auto"`: Auto-detect best available (CUDA > MPS > CPU)
 
 # 5. Evaluate log likelihood
 log_prob = model.log_prob(dataset)
