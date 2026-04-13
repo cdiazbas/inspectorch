@@ -80,7 +80,17 @@ log_prob = model.log_prob(dataset)
 
 ## Citation
 
-If you use Inspectorch in your research, please cite the corresponding paper (arXiv:2602.20316).
+If you use Inspectorch in your research, please cite the corresponding paper:
+
+```bibtex
+@article{diazbas2026inspectorch,
+  title   = {Inspectorch: Efficient rare event exploration with normalizing flows},
+  author  = {Diaz Baso, Carlos Jose},
+  journal = {arXiv preprint arXiv:2602.20316},
+  year    = {2026},
+  url     = {https://arxiv.org/abs/2602.20316}
+}
+```
 
 ## For development purposes
 

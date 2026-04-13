@@ -24,7 +24,7 @@ def device_info():
     """
     print(f"Machine name: {socket.gethostname()}")
     print(f"Operating system: {platform.system()} {platform.release()}")
-    
+
     if torch.cuda.is_available():
         print(f"Number of CUDA GPUs: {torch.cuda.device_count()}")
         for i in range(torch.cuda.device_count()):
@@ -156,32 +156,32 @@ def nume2string(num):
 def resolve_device(device="auto", verbose=True):
     """
     Intelligently resolves the requested device to an available device.
-    
+
     Implements smart fallback logic:
     - 'cuda' → CUDA if available → MPS on macOS if available → CPU
-    - 'mps' → MPS if available → CPU  
+    - 'mps' → MPS if available → CPU
     - 'cpu' → CPU (always)
     - 'auto' → Best available (CUDA > MPS > CPU)
-    
-    This allows users to write code like device="cuda" without worrying about 
+
+    This allows users to write code like device="cuda" without worrying about
     Mac compatibility. The function automatically adapts.
-    
+
     Args:
         device (str): Requested device. Options:
             - 'auto': Automatically select best available
             - 'cuda' or 'cuda:N': CUDA GPU (falls back to MPS→CPU if unavailable)
             - 'mps': Apple Metal Performance Shaders (falls back to CPU if unavailable)
             - 'cpu': CPU device
-            
+
         verbose (bool): Print device selection info
-        
+
     Returns:
         str: Resolved device string ('cpu', 'cuda', 'cuda:N', or 'mps')
     """
     device = str(device).lower().strip()
-    
+
     # Handle CUDA requests
-    if device.startswith('cuda'):
+    if device.startswith("cuda"):
         if torch.cuda.is_available():
             if verbose:
                 print(f"Device: CUDA available. Using {device}")
@@ -190,56 +190,61 @@ def resolve_device(device="auto", verbose=True):
             # CUDA not available, try MPS (usually on macOS)
             if torch.backends.mps.is_available():
                 if verbose:
-                    print(f"Device: CUDA requested but not available. MPS detected on macOS, using 'mps'.")
-                return 'mps'
+                    print(
+                        "Device: CUDA requested but not available. MPS detected on macOS, using 'mps'."
+                    )
+                return "mps"
             else:
                 if verbose:
-                    print(f"Device: CUDA requested but not available. Falling back to CPU.")
-                return 'cpu'
-    
+                    print(
+                        "Device: CUDA requested but not available. Falling back to CPU."
+                    )
+                return "cpu"
+
     # Handle MPS requests
-    elif device == 'mps':
+    elif device == "mps":
         if torch.backends.mps.is_available():
             if verbose:
-                print(f"Device: MPS available. Using 'mps'.")
-            return 'mps'
+                print("Device: MPS available. Using 'mps'.")
+            return "mps"
         else:
             if verbose:
-                print(f"Device: MPS requested but not available. Falling back to CPU.")
-            return 'cpu'
-    
+                print("Device: MPS requested but not available. Falling back to CPU.")
+            return "cpu"
+
     # Handle CPU requests
-    elif device == 'cpu':
+    elif device == "cpu":
         if verbose:
-            print(f"Device: Using CPU.")
-        return 'cpu'
-    
+            print("Device: Using CPU.")
+        return "cpu"
+
     # Handle auto selection
-    elif device == 'auto':
+    elif device == "auto":
         if torch.cuda.is_available():
             if verbose:
-                print(f"Device: Auto-detected CUDA. Using 'cuda:0'.")
-            return 'cuda:0'
+                print("Device: Auto-detected CUDA. Using 'cuda:0'.")
+            return "cuda:0"
         elif torch.backends.mps.is_available():
             if verbose:
-                print(f"Device: Auto-detected MPS on macOS. Using 'mps'.")
-            return 'mps'
+                print("Device: Auto-detected MPS on macOS. Using 'mps'.")
+            return "mps"
         else:
             if verbose:
-                print(f"Device: No GPU detected. Falling back to CPU.")
-            return 'cpu'
-    
+                print("Device: No GPU detected. Falling back to CPU.")
+            return "cpu"
+
     else:
         # Unknown device string, try to auto-resolve
         if verbose:
             print(f"Device: Unknown device '{device}'. Auto-resolving...")
-        return resolve_device('auto', verbose=verbose)
+        return resolve_device("auto", verbose=verbose)
 
 
 def configure_device(model_wrapper, device):
     """
-    Configures device placement for training with support for multi-GPU and smart fallback.
-    
+    Configures device placement for training with support for multi-GPU and
+    smart fallback.
+
     Uses smart device resolution: if you request 'cuda' but you're on a Mac,
     it automatically falls back to 'mps' if available, then 'cpu'.
 
@@ -254,7 +259,7 @@ def configure_device(model_wrapper, device):
 
     Returns:
         Tuple of (active_model, effective_primary_device)
-        
+
     Examples:
         - device="cuda" → Uses CUDA if available, else MPS on Mac, else CPU
         - device="cuda:0" → Uses GPU 0 (or falls back to MPS/CPU)
@@ -263,7 +268,7 @@ def configure_device(model_wrapper, device):
     """
     # Resolve the device intelligently
     resolved_device = resolve_device(device, verbose=True)
-    
+
     if resolved_device == "cpu":
         effective_primary_device = torch.device("cpu")
         active_model = model_wrapper.to(effective_primary_device)
@@ -272,12 +277,12 @@ def configure_device(model_wrapper, device):
         # Parse CUDA device string (e.g., 'cuda:0', 'cuda:0,1,2', or 'cuda')
         device_clean = resolved_device.strip()
         num_gpus_available = torch.cuda.device_count()
-        
+
         if device_clean in ["cuda", "cuda:"]:
             # Use all available GPUs
             gpu_ids = list(range(num_gpus_available))
             primary_gpu = 0
-        
+
         elif "," in device_clean:
             # Multiple specific GPUs: 'cuda:0,1,2'
             try:
@@ -289,9 +294,7 @@ def configure_device(model_wrapper, device):
                 gpu_ids = [int(g.strip()) for g in device_part.split(",")]
 
                 # Validate GPU IDs
-                valid_gpu_ids = [
-                    g for g in gpu_ids if 0 <= g < num_gpus_available
-                ]
+                valid_gpu_ids = [g for g in gpu_ids if 0 <= g < num_gpus_available]
                 if not valid_gpu_ids:
                     print(
                         f"Device: No valid GPU IDs in {gpu_ids}. Falling back to CPU."
@@ -308,7 +311,7 @@ def configure_device(model_wrapper, device):
                 )
                 gpu_ids = list(range(num_gpus_available))
                 primary_gpu = 0
-        
+
         else:
             # Single GPU: 'cuda:0'
             try:
@@ -341,12 +344,12 @@ def configure_device(model_wrapper, device):
         else:
             print(f"Device: Using single GPU cuda:{primary_gpu}")
             active_model = model_wrapper
-            
+
     elif resolved_device == "mps":
         effective_primary_device = torch.device("mps")
         # MPS doesn't support float64, so convert to float32 before moving to device
         active_model = model_wrapper.float().to(effective_primary_device)
-        
+
     else:
         # Fallback to CPU if something goes wrong
         print(f"Device: Fallback to CPU (resolved_device={resolved_device}).")
