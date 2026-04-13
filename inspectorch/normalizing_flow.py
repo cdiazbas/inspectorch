@@ -504,7 +504,7 @@ def train_flow(
 
             # Move data to the primary device; DataParallel will scatter if active
             y = (splines_tensor.to(effective_primary_device) - y_mean) / y_std
-            
+
             # Ensure float32 on MPS (MPS doesn't support float64)
             if effective_primary_device.type == "mps":
                 y = y.float()

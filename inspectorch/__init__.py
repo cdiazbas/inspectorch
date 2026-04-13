@@ -8,25 +8,30 @@ import torch
 
 try:
     import torchdiffeq
+
     _original_odeint = torchdiffeq.odeint
 
     def _mps_odeint(*args, **kwargs):
         """
-        Wrapper for torchdiffeq.odeint that forces float32 dtype on MPS devices.
-        
-        MPS doesn't support float64, so we intercept the call and inject dtype=torch.float32
-        in the options to work around this upstream limitation in torchdiffeq.
+        Wrapper for torchdiffeq.odeint that forces float32 dtype on MPS
+        devices.
+
+        MPS doesn't support float64, so we intercept the call and inject
+        dtype=torch.float32 in the options to work around this upstream
+        limitation in torchdiffeq.
         """
-        y0 = kwargs.get('y0')
+        y0 = kwargs.get("y0")
         if y0 is None and len(args) > 1:
             y0 = args[1]
-        t = kwargs.get('t')
+        t = kwargs.get("t")
         if t is None and len(args) > 2:
             t = args[2]
 
         def _check_mps(x):
-            """Recursively check if any tensor in x is on MPS device."""
-            if isinstance(x, torch.Tensor) and x.device.type == 'mps':
+            """
+            Recursively check if any tensor in x is on MPS device.
+            """
+            if isinstance(x, torch.Tensor) and x.device.type == "mps":
                 return True
             if isinstance(x, (tuple, list)):
                 return any(_check_mps(item) for item in x)
@@ -34,13 +39,13 @@ try:
 
         # If input tensors are on MPS, force float32 for odeint
         if _check_mps(y0) or _check_mps(t):
-            options = kwargs.get('options', {})
+            options = kwargs.get("options", {})
             if options is None:
                 options = {}
-            if 'dtype' not in options:
-                options['dtype'] = torch.float32
-            kwargs['options'] = options
-            
+            if "dtype" not in options:
+                options["dtype"] = torch.float32
+            kwargs["options"] = options
+
         return _original_odeint(*args, **kwargs)
 
     # Apply patch to torchdiffeq
@@ -49,6 +54,7 @@ try:
     # Also patch flow_matching.solver.ode_solver if available
     try:
         import flow_matching.solver.ode_solver
+
         flow_matching.solver.ode_solver.odeint = _mps_odeint
     except ImportError:
         pass
@@ -74,5 +80,11 @@ __all__ = [
     "GeneralizedPatchedDataset",
 ]
 
-__version__ = "0.1.0"
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
+
+try:
+    __version__ = _pkg_version("inspectorch")
+except PackageNotFoundError:
+    __version__ = "unknown"
+
 __author__ = "Carlos Jose Diaz Baso"

@@ -23,19 +23,19 @@ classifiers = [
 ]
 
 dependencies = [
-    "torch",
-    "nflows",
-    "numpy",
-    "matplotlib",
-    "einops",
-    "scipy",
-    "ipykernel",
-    "jupyterlab",
-    "tqdm",
-    "flow_matching",
-    "torchdiffeq",
-    "torchcfm",
-    "pot",
+    "torch>=2.0.0",
+    "nflows>=0.14",
+    "numpy>=1.20.0",
+    "matplotlib>=3.3.0",
+    "einops>=0.6.0",
+    "scipy>=1.7.0",
+    "ipykernel>=6.0.0",
+    "jupyterlab>=3.0.0",
+    "tqdm>=4.60.0",
+    "flow_matching>=1.0.0",
+    "torchdiffeq>=0.2.3",
+    "torchcfm>=1.0.0",
+    "pot>=0.9.0",
 ]
 
 [project.optional-dependencies]

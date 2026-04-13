@@ -5,7 +5,6 @@ Demonstrates the auto-fallback behavior when requesting GPU devices
 on different hardware platforms.
 """
 
-import torch
 from inspectorch import DensityEstimator
 from inspectorch.utils import resolve_device
 
@@ -24,7 +23,7 @@ print()
 # This is perfect for scripts - you can hardcode "cuda" and it will
 # automatically work on any platform!
 print("On a Mac with MPS:")
-print("  resolve_device('cuda') ->", resolve_device('cuda', verbose=True))
+print("  resolve_device('cuda') ->", resolve_device("cuda", verbose=True))
 print()
 
 print("On a Linux/Windows machine with CUDA:")
@@ -32,7 +31,7 @@ print("  resolve_device('cuda') -> 'cuda:0'  (from the error message above)")
 print()
 
 print("Using 'auto' for automatic selection:")
-print("  resolve_device('auto') ->", resolve_device('auto', verbose=True))
+print("  resolve_device('auto') ->", resolve_device("auto", verbose=True))
 print()
 
 # ============================================================================
