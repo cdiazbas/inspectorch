@@ -308,12 +308,27 @@ params = {
 def set_params():
     """
     Set the default plotting parameters.
+
+    Falls back to matplotlib's built-in mathtext when no LaTeX
+    installation is available on the system.
     """
+    import shutil
+    import warnings
+
     import matplotlib.pyplot as plt
     import matplotlib.pylab as pylab
-    from .plot_params import params
+
+    active_params = params.copy()
+    if active_params.get("text.usetex") and shutil.which("latex") is None:
+        warnings.warn(
+            "No 'latex' executable found; falling back to matplotlib's "
+            "built-in mathtext. Install a TeX distribution (e.g. TeX Live) "
+            "for full LaTeX rendering."
+        )
+        active_params["text.usetex"] = False
+        active_params.pop("text.latex.preamble", None)
 
     plt.show()  # This is necessary to avoid a bug in matplotlib
     plt.rcParams.copy()
-    pylab.rcParams.update(params)
+    pylab.rcParams.update(active_params)
     return
