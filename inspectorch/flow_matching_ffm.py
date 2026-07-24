@@ -529,7 +529,7 @@ class FlowMatchingBackend(nn.Module):
                 with torch.set_grad_enabled(True):
                     x.requires_grad_(True)
                     t_expand = t * torch.ones(x.shape[0], 1, device=x.device)
-                    # We don't have 'context' in this generic backend usually, but AdaMLP might supports it.
+                    # We don't usually have 'context' in this generic backend, but AdaMLP might support it.
                     # Current FlowMatchingBackend doesn't support generic context passing in log_prob yet.
                     # VectorFieldAdaMLP supports context=None.
                     v = self.net(t_expand, x)
@@ -609,7 +609,7 @@ class FlowMatchingBackend(nn.Module):
         self.velocity_model.to("cpu")
         return np.concatenate(log_probs)
 
-    # log_prob method using original API produces a lot of noise if Hutchinson estimation is used.
+    # The log_prob method using the original API produces a lot of noise if Hutchinson estimation is used.
     def log_prob_WRONG(
         self,
         inputs: Union[torch.Tensor, np.ndarray, object],

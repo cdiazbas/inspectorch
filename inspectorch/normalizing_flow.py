@@ -73,7 +73,7 @@ def masked_umnn_autoregressive_transform(
     input_size, hidden_size, num_blocks=1, activation=F.elu
 ):
     """
-    An unconstrained monotonic neural networks autoregressive layer that
+    An unconstrained monotonic neural network autoregressive layer that
     transforms the variables.
     """
     from nflows.transforms.autoregressive import MaskedUMNNAutoregressiveTransform
@@ -91,7 +91,7 @@ def masked_umnn_autoregressive_transform(
 # =============================================================================
 def create_linear_transform(param_dim):
     """
-    Creates a composite simple linear transformation with a random permutation.
+    Creates a simple composite linear transformation with a random permutation.
     """
     return transforms.CompositeTransform(
         [
@@ -672,7 +672,7 @@ def check_variables_loader(
         if i == 0:
             ax.set_ylabel("Density")
         x = np.linspace(zz[:, var].min(), zz[:, var].max(), 100)
-        ax.plot(x, norm.pdf(x, 0, 1), "k--", label="Normal Gaussian")
+        ax.plot(x, norm.pdf(x, 0, 1), "k--", label="Standard Normal")
         ax.locator_params(axis="y", nbins=6)
     plt.tight_layout()
 

@@ -30,9 +30,7 @@ except ImportError:
 
 class SinusoidalTimeEmbedding(nn.Module):
     """
-    Sinusoidal time embedding as used in Vaswani et al.
-
-    (2017).
+    Sinusoidal time embedding as used in Vaswani et al. (2017).
     """
 
     def __init__(self, embed_dim: int = 16, max_freq: float = 1000.0):

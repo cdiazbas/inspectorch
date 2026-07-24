@@ -2,7 +2,7 @@ import torch
 
 # MPS (Apple Silicon GPU) Acceleration Support
 # ============================================
-# Apple's Metal Performance Shaders (MPS) backend doesn't support float64,
+# Apple's Metal Performance Shaders (MPS) backend doesn't support float64.
 # This monkey patch intercepts odeint calls and forces float32 when MPS is detected.
 # See: https://github.com/pytorch/pytorch/issues/issues_about_mps_float64
 

@@ -408,7 +408,6 @@ class FlowMatchingSBIBackend(nn.Module):
         log_probs = []
 
         # Integration times: 1.0 -> 0.0 (Data -> Noise)
-        # Integration times: 1.0 -> 0.0 (Data -> Noise)
         t_span = torch.tensor([1.0, 0.0], device=device)
         # Handle fixed step solvers which might need explicit grid
         if solver_method in ["euler", "rk4", "midpoint"]:

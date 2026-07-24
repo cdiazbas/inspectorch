@@ -28,7 +28,7 @@ class GeneralizedPatchedDataset(torch.utils.data.Dataset):
             data (torch.Tensor or np.ndarray): The input data tensor.
             dim_names (str): A space-separated string of dimension names.
             feature_dims (list): List of dimension names for the flow's features.
-            patch_config (dict, optional): Configures patching on primary variables, e.g, {'x': {'size': 5, 'stride': 1}, 'y': {'size': 5, 'stride': 1}} or in the temporal case  {'t': {'size': 11, 'stride': 1}}
+            patch_config (dict, optional): Configures patching on primary variables, e.g., {'x': {'size': 5, 'stride': 1}, 'y': {'size': 5, 'stride': 1}} or, in the temporal case, {'t': {'size': 11, 'stride': 1}}
             dim_reduction (dict, optional): Dimensionality reduction config, e.g. {'method': 'pca', 'n_components': 10}
         """
         if not isinstance(data, torch.Tensor):

@@ -29,7 +29,7 @@ utils.device_info()
 # --- Data loading and preprocessing ---
 # Read the compressed Hinode data from file
 with np.load("hinode_data.npz") as npzfile:
-    # The notebook example (example_normalizing_flow.ipynb) normalizes by a fixed factor (186.0)
+    # The notebook example (01_normalizing_flow.ipynb) normalizes by a fixed factor (186.0)
     data = npzfile["data"] / 186.0
     wav = npzfile["wav"]
     pixel_size = npzfile["pixel_size"] * 3.0
@@ -139,7 +139,7 @@ plt.savefig("models/post_training_variables.png", dpi=300, bbox_inches="tight")
 log_prob = model.log_prob(inputs=dataset)
 
 
-# The model evaluated all the dataset, so we need to reshape the log_prob
+# The model evaluated the entire dataset, so we need to reshape the log_prob
 # to match the original dimensions of the data
 
 # Reshape log_prob to match original spatial dimensions
@@ -216,7 +216,7 @@ for i in range(nplots):
     cc = 299792.458  # speed of light in km/s
     line = (
         wav[len(wav) // 2] / 10
-    )  # reference wavelength in nm (choose center or a specific value)
+    )  # reference wavelength in nm (choose the center or a specific value)
 
     # Draw a vertical line at 10 km/s on the secondary axis
     v_line = 10  # km/s

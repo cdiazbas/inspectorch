@@ -273,7 +273,7 @@ class FlowMatchingCFMBackend:
                 # 2. Sample Conditional Flow (t, xt, ut)
                 # t, xt, ut = matcher.sample_location_and_conditional_flow(x0, x1)
                 if self.method in ["exact", "sb"]:
-                    # OT methods might return extra args but typically signature matches
+                    # OT methods might return extra args, but the signature typically matches
                     t, xt, ut = self.matcher.sample_location_and_conditional_flow(
                         x0, x1
                     )
@@ -478,8 +478,8 @@ class FlowMatchingCFMBackend:
         # or import standard utility.
         # FlowMatchingBackend uses: plot_train_loss(self.training_loss, ...)
         # We can implement directly or import.
-        # Let's import the one from inspectorch.utils typically used?
-        # Actually FlowMatchingBackend calls a global function `plot_train_loss` which is likely imported?
+        # Should we import the one typically used from inspectorch.utils?
+        # Actually FlowMatchingBackend calls a global function `plot_train_loss`, which is likely imported?
         # No, it looks like it might be a utility.
         # Let's just implement a simple one here or use inspectorch.utils if we knew where it was.
         # To remain independent:
@@ -513,7 +513,7 @@ class FlowMatchingCFMBackend:
             print(f"Loss plot saved to {save_path}")
 
         if show_plot:
-            plt.show()  # In notebooks this is needed or just plt.figure is enough
+            plt.show()  # In notebooks this is needed, or plt.figure alone is enough
         else:
             # If not show_plot, usually we still show in notebooks?
             # The API says show_plot=False default?
@@ -556,8 +556,8 @@ class FlowMatchingCFMBackend:
         estimation.
 
         Args:
-            use_naive: If True, use naive implementation (like SBI).
-                      If False, use torchcfm API-based implementation.
+            use_naive: If True, use the naive implementation (like SBI).
+                      If False, use the torchcfm API-based implementation.
         """
         if use_naive:
             return self._log_prob_naive(

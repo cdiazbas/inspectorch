@@ -13,9 +13,9 @@ def device_info():
     """
     Prints information about the current machine and available compute devices.
 
-    This function checks for CUDA (NVIDIA GPUs), MPS (Apple Silicon), and reports
-    available hardware. If neither CUDA nor MPS is available, it notifies the user
-    that the CPU will be used instead.
+    This function checks for CUDA (NVIDIA GPUs) and MPS (Apple Silicon), and
+    reports the available hardware. If neither CUDA nor MPS is available, it
+    notifies the user that the CPU will be used instead.
 
     Requires:
         - torch

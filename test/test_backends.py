@@ -345,7 +345,7 @@ def main():
     output_dir = script_dir  # "inspectorch/test/" implicitly
 
     # Setup Logger
-    # Clean previous log if exists because we append now
+    # Remove the previous log if it exists, because we append now
     log_file = os.path.join(output_dir, "test_run.log")
     if os.path.exists(log_file):
         os.remove(log_file)

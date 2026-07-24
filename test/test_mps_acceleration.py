@@ -16,7 +16,7 @@ def test_mps_patch_applied():
     """
 
     # Check that torchdiffeq.odeint has been patched
-    assert hasattr(torchdiffeq.odeint, "__doc__"), "odeint should have docstring"
+    assert hasattr(torchdiffeq.odeint, "__doc__"), "odeint should have a docstring"
     assert "Wrapper for torchdiffeq.odeint" in torchdiffeq.odeint.__doc__, (
         "odeint should be patched with MPS wrapper"
     )
@@ -85,7 +85,7 @@ if __name__ == "__main__":
         print("All tests passed! ✓")
         print("=" * 60)
         print("\nNote: Full MPS testing requires Apple Silicon hardware.")
-        print("The patch will automatically apply float32 to float64 operations")
+        print("The patch will automatically force float32 for float64 operations")
         print("when tensors are detected on MPS devices.")
 
     except AssertionError as e:
