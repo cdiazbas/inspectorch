@@ -63,13 +63,36 @@ except ImportError:
     # If torchdiffeq is not available, continue without MPS patch
     pass
 
-from .density_estimator import DensityEstimator
-from .normalizing_flow import NormalizingFlowBackend
-from .flow_matching_ffm import FlowMatchingBackend as FlowMatchingFFMBackend
-from .flow_matching_sbi import FlowMatchingSBIBackend
-from .flow_matching_cfm import FlowMatchingCFMBackend
+# Backends are resolved on first attribute access (PEP 562) so that, for
+# example, the normalizing-flow path works without flow_matching, torchcfm
+# or pot installed.
+_LAZY_ATTRS = {
+    "DensityEstimator": (".density_estimator", "DensityEstimator"),
+    "NormalizingFlowBackend": (".normalizing_flow", "NormalizingFlowBackend"),
+    "FlowMatchingFFMBackend": (".flow_matching_ffm", "FlowMatchingBackend"),
+    "FlowMatchingSBIBackend": (".flow_matching_sbi", "FlowMatchingSBIBackend"),
+    "FlowMatchingCFMBackend": (".flow_matching_cfm", "FlowMatchingCFMBackend"),
+    "GeneralizedPatchedDataset": (".datasets", "GeneralizedPatchedDataset"),
+}
 
-from .datasets import GeneralizedPatchedDataset
+
+def __getattr__(name):
+    """
+    Import a backend the first time it is actually used.
+    """
+    if name in _LAZY_ATTRS:
+        import importlib
+
+        module_name, attr_name = _LAZY_ATTRS[name]
+        value = getattr(importlib.import_module(module_name, __name__), attr_name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_LAZY_ATTRS))
+
 
 __all__ = [
     "DensityEstimator",

@@ -1,9 +1,8 @@
 import torch.nn as nn
 import numpy as np
 
-from .normalizing_flow import NormalizingFlowBackend
-from .flow_matching_ffm import FlowMatchingBackend as FlowMatchingFFMBackend
-from .flow_matching_sbi import FlowMatchingSBIBackend
+# Backends are imported inside __init__ so that using one does not require
+# the libraries of the others (flow_matching, torchcfm, torchdiffeq, pot).
 
 
 class DensityEstimator(nn.Module):
@@ -23,10 +22,16 @@ class DensityEstimator(nn.Module):
         self.type = type.lower()
 
         if self.type == "normalizing_flow":
+            from .normalizing_flow import NormalizingFlowBackend
+
             self.backend = NormalizingFlowBackend(*args, **kwargs)
         elif self.type == "flow_matching_ffm":
-            self.backend = FlowMatchingFFMBackend(*args, **kwargs)
+            from .flow_matching_ffm import FlowMatchingBackend
+
+            self.backend = FlowMatchingBackend(*args, **kwargs)
         elif self.type == "flow_matching_sbi":
+            from .flow_matching_sbi import FlowMatchingSBIBackend
+
             self.backend = FlowMatchingSBIBackend(*args, **kwargs)
         elif self.type == "flow_matching_cfm":
             from .flow_matching_cfm import FlowMatchingCFMBackend

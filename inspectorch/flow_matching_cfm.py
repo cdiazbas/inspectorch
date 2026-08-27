@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 from typing import Union
 from tqdm import tqdm
@@ -33,6 +34,8 @@ except ImportError:
 
 # Use existing dependencies for inference
 from torchdiffeq import odeint
+
+from . import utils
 
 # Import VectorFieldAdaMLP from shared velocity_models module
 try:
@@ -81,7 +84,7 @@ class MLP(nn.Module):
         return self.net(x)
 
 
-class FlowMatchingCFMBackend:
+class FlowMatchingCFMBackend(nn.Module):
     """
     Backend integrating 'conditional-flow-matching' (torchcfm).
     """
@@ -92,9 +95,13 @@ class FlowMatchingCFMBackend:
             sigma: Noise level (sigma_min for OT-CFM).
             method: 'independent' (fast, default), 'exact' (OT-CFM, slow), 'target', or 'sb'.
         """
+        super().__init__()
         self.sigma = sigma
         self.method = method
         self.velocity_model = None  # Interface: forward(t, x) -> v
+        self.y_mean = None
+        self.y_std = None
+        self.training_loss = []
 
         # Initialize Matcher
         if method == "exact":
@@ -204,14 +211,18 @@ class FlowMatchingCFMBackend:
             print("  Using nflows ResidualNet architecture")
 
         elif architecture == "FourierMLP":
+            fourier_kwargs = dict(kwargs)
+            # pop, not get: passing it here *and* in **kwargs is a duplicate
+            # keyword argument and raises TypeError.
+            time_dim = fourier_kwargs.pop("time_embedding_dim", 32)
             fourier = FourierMLP(
                 dim_in=input_size,
                 dim_out=input_size,
                 num_resnet_blocks=num_layers,
                 dim_hidden=hidden_features,
                 activation=activation,
-                time_embedding_dim=kwargs.get("time_embedding_dim", 32),
-                **kwargs,
+                time_embedding_dim=time_dim,
+                **fourier_kwargs,
             )
             self.velocity_model = CFMMLPWrapper(fourier)
             print("  Using FourierMLP architecture")
@@ -225,8 +236,10 @@ class FlowMatchingCFMBackend:
     def train_flow(
         self,
         train_loader: torch.utils.data.DataLoader,
-        num_epochs: int = 100,
         learning_rate: float = 1e-3,
+        num_epochs: int = 100,
+        device: str = "cpu",
+        output_model=None,
         save_model: bool = False,
         **kwargs,
     ):
@@ -234,6 +247,10 @@ class FlowMatchingCFMBackend:
         Train using the Conditional Flow Matching objective.
 
         Loss = ||v_theta(t, x_t) - u_t(x|z)||^2
+
+        The argument order matches the other backends: learning_rate then
+        num_epochs. Passing them positionally the other way round used to
+        silently train for a fraction of an epoch.
         """
         if self.velocity_model is None:
             raise ValueError("Model not created. Call create_flow first.")
@@ -241,10 +258,13 @@ class FlowMatchingCFMBackend:
         optimizer = torch.optim.Adam(self.velocity_model.parameters(), lr=learning_rate)
 
         self.velocity_model.train()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
-        print(f"Device: Using {device} for training.")
+        # Keep the normalization stats so log_prob and sample can undo them.
+        if train_loader is not None and hasattr(train_loader.dataset, "y_mean"):
+            self.y_mean = train_loader.dataset.y_mean
+            self.y_std = train_loader.dataset.y_std
 
         self.training_loss = []
 
@@ -299,7 +319,13 @@ class FlowMatchingCFMBackend:
             avg_loss = np.mean(epoch_losses)
             self.training_loss.append(avg_loss)
 
+            if save_model and output_model is not None:
+                torch.save(self.velocity_model.state_dict(), output_model)
+
         print("Training complete.")
+        if save_model and output_model is not None:
+            torch.save(self.velocity_model.state_dict(), output_model)
+            print(f"Model saved to {output_model}")
 
     def print_summary(self):
         """
@@ -320,7 +346,7 @@ class FlowMatchingCFMBackend:
     def check_variables(
         self,
         train_loader,
-        plot_variables=[0, 1],
+        plot_variables=None,
         figsize=(8, 4),
         device="cpu",
         batch_size=50000,
@@ -505,7 +531,6 @@ class FlowMatchingCFMBackend:
         plt.minorticks_on()
         plt.xlabel("Epoch")
         plt.ylabel(r"FM Loss: $\|\mathbf{v}_\theta - \mathbf{u}_t\|^2$")
-        plt.legend()
         plt.grid(True)
 
         if save_path:
@@ -513,11 +538,6 @@ class FlowMatchingCFMBackend:
             print(f"Loss plot saved to {save_path}")
 
         if show_plot:
-            plt.show()  # In notebooks this is needed, or plt.figure alone is enough
-        else:
-            # If not show_plot, usually we still show in notebooks?
-            # The API says show_plot=False default?
-            # Actually standard behavior:
             plt.show()
 
     def _ode_func(self, t, x):
@@ -571,7 +591,7 @@ class FlowMatchingCFMBackend:
     def _log_prob_naive(
         self,
         inputs: Union[torch.Tensor, np.ndarray, object],
-        solver_method: str = "euler",
+        solver_method: str = "dopri5",
         step_size: float = 0.1,
         device: str = "cpu",
         batch_size: int = 1000,
@@ -697,7 +717,7 @@ class FlowMatchingCFMBackend:
     def _log_prob_api(
         self,
         inputs: Union[torch.Tensor, np.ndarray, object],
-        solver_method: str = "euler",
+        solver_method: str = "dopri5",
         step_size: float = 0.1,
         device: str = "cpu",
         batch_size: int = 1000,
@@ -854,4 +874,10 @@ class FlowMatchingCFMBackend:
         )
 
         x1 = traj[-1]
+
+        # Undo the standardisation applied during training, so samples come
+        # back in the data coordinates like the other backends' do.
+        if self.y_mean is not None and self.y_std is not None:
+            x1 = x1 * self.y_std.to(x1.device) + self.y_mean.to(x1.device)
+
         return x1.detach().cpu().numpy()
