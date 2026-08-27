@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import warnings
 from typing import Optional, List, Union, Tuple
 from tqdm import tqdm
 from . import utils
@@ -211,8 +212,9 @@ class FlowMatchingSBIBackend(nn.Module):
                 print(f"No existing model found at {output_model}")
                 return
 
-        # Setup
-        utils.configure_device(self, device)  # Helper to move self to device
+        # Setup. configure_device returns the RESOLVED device: keep it, or a
+        # string like "auto" reaches .to() and raises RuntimeError.
+        _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
         optimizer = torch.optim.AdamW(
             self.velocity_model.parameters(), lr=learning_rate
@@ -289,6 +291,7 @@ class FlowMatchingSBIBackend(nn.Module):
             raise ImportError("torchdiffeq is required for sampling.")
 
         self.velocity_model.eval()
+        _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
         # 1. Sample Noise (x0)
@@ -340,7 +343,7 @@ class FlowMatchingSBIBackend(nn.Module):
         batch_size: int = 1000,
         device: str = "cpu",
         context: Optional[torch.Tensor] = None,
-        solver_method: str = "euler",
+        solver_method: str = "dopri5",
         atol: float = 1e-5,
         rtol: float = 1e-5,
         exact_divergence: bool = False,
@@ -362,12 +365,26 @@ class FlowMatchingSBIBackend(nn.Module):
         self.velocity_model.to(device)
 
         # 1. Handle Inputs (Dataset vs Tensor)
+        # `norm_std` is the std the data fed to the model was divided by, and
+        # stays None when the model sees unstandardised data. It drives the
+        # change-of-variables correction below.
+        norm_std = None
         if hasattr(inputs, "normalized_patches"):
             # It's a GeneralizedPatchedDataset or similar
             if dataset_normalization:
                 data = inputs.normalized_patches()
                 apply_mean_std_adjustment = False
+                norm_std = getattr(inputs, "y_std", self.y_std)
             else:
+                # Raw patches go to a model trained on standardised data.
+                # Deliberate only if the caller has already standardised.
+                warnings.warn(
+                    "dataset_normalization=False feeds raw patches to a model "
+                    "trained on standardised data; log-probs will be "
+                    "meaningless unless the input is already standardised.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
                 data = inputs.patches
                 apply_mean_std_adjustment = False
         elif hasattr(inputs, "patches"):
@@ -382,22 +399,16 @@ class FlowMatchingSBIBackend(nn.Module):
         else:
             raise ValueError(f"Unknown input type: {type(inputs)}")
 
-        # 2. Normalize and Compute Jacobian Transform LogDet
-
-        # If we need to apply normalization using self.y_mean/std
+        # 2. Normalize and compute the change-of-variables correction.
         if apply_mean_std_adjustment and self.y_mean is not None:
             self.y_mean = self.y_mean.to(device)
             self.y_std = self.y_std.to(device)
+            norm_std = self.y_std
 
-            # Calculate normalization log det
-            # y = (x - mu) / std
-            # log p(x) = log p(y) + log |det dy/dx|
-            # dy/dx = 1/std
-            # log |det| = sum(log(1/std)) = -sum(log(std))
-            if self.y_std.numel() == 1:
-                -torch.log(self.y_std) * data.shape[1]
-            else:
-                -torch.sum(torch.log(self.y_std))
+        # log p(x) = log p(y) - sum(log std). Applied for every path that
+        # standardises the data, so the result is a density in the data
+        # coordinates rather than in the standardised ones.
+        log_det_norm = utils.normalization_log_det(norm_std, data.shape[1])
 
         # Data Loading
         dataset = torch.utils.data.TensorDataset(data)
@@ -490,7 +501,7 @@ class FlowMatchingSBIBackend(nn.Module):
 
                 # log p(x) = log p(z) + delta_log_p
 
-                batch_log_prob = log_p_z - delta_log_p
+                batch_log_prob = log_p_z - delta_log_p + log_det_norm
 
                 log_probs.append(batch_log_prob.cpu().numpy())
 
@@ -526,7 +537,7 @@ class FlowMatchingSBIBackend(nn.Module):
     def check_variables(
         self,
         train_loader: torch.utils.data.DataLoader,
-        plot_variables: List[int] = [0, 1],
+        plot_variables=None,
         figsize: Tuple[int, int] = (8, 4),
         device: str = "cpu",
         batch_size: int = 50000,  # Unused, kept for API compatibility
@@ -543,12 +554,15 @@ class FlowMatchingSBIBackend(nn.Module):
         import matplotlib.pyplot as plt
         from scipy.stats import norm
 
+        if plot_variables is None:
+            plot_variables = [0, 1]
+
         if not TORCHDIFFEQ_AVAILABLE:
             print("check_variables requires torchdiffeq.")
             return
 
         self.velocity_model.eval()
-        utils.configure_device(self, device)
+        _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
         # Collect data

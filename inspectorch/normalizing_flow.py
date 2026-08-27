@@ -140,7 +140,7 @@ class NormalizingFlowBackend(nn.Module):
         print_summary():
             Prints a summary of the flow model architecture.
 
-        check_variables(train_loader, plot_variables=[0, 1], figsize=(8, 4), device="cpu", batch_size=500000, rel_size=0.1):
+        check_variables(train_loader, plot_variables=None, figsize=(8, 4), device="cpu", batch_size=500000, rel_size=0.1):
             Checks and optionally plots variables from the training data for diagnostics.
 
         train_flow(train_loader, learning_rate=1e-3, num_epochs=100, device="cpu", output_model=None, save_model=False, load_existing=False, extra_noise=1e-4):
@@ -199,11 +199,17 @@ class NormalizingFlowBackend(nn.Module):
         Returns:
             numpy.ndarray: The log probabilities of the inputs as a NumPy array.
         """
+        # Capture the std before `inputs` is rebound: a density fitted on
+        # standardised data needs -sum(log std) to become a density in the
+        # data coordinates. See utils.normalization_log_det.
+        norm_std = getattr(inputs, "y_std", None) if dataset_normalization else None
         if dataset_normalization:
             inputs = inputs.normalized_patches()
 
         else:
             inputs = inputs.patches
+
+        log_det_norm = iu.normalization_log_det(norm_std, inputs.shape[1])
 
         results = []
         # Use smart device resolution (fallback CUDA -> MPS -> CPU)
@@ -223,14 +229,15 @@ class NormalizingFlowBackend(nn.Module):
         # Move model back to CPU if needed
         self.flow_model.to("cpu")
 
-        return np.concatenate(results)
+        return np.concatenate(results) + log_det_norm
 
     def sample(self, num_samples: int, device: str = "cpu") -> torch.Tensor:
         """
         Samples from the flow model.
         """
         self.flow_model.eval()
-        iu.configure_device(self.flow_model, device)
+        _, device = iu.configure_device(self.flow_model, device)
+        self.flow_model.to(device)
         with torch.no_grad():
             samples = self.flow_model.sample(num_samples)
         return samples
@@ -248,12 +255,14 @@ class NormalizingFlowBackend(nn.Module):
     def check_variables(
         self,
         train_loader,
-        plot_variables=[0, 1],
+        plot_variables=None,
         figsize=(8, 4),
         device="cpu",
         batch_size=500000,
         rel_size=0.1,
     ):
+        if plot_variables is None:
+            plot_variables = [0, 1]
         check_variables(
             self.flow_model,
             train_loader,
@@ -307,13 +316,11 @@ class NormalizingFlowBackend(nn.Module):
 
 
 # =============================================================================
-def create_flow(
-    input_size=1, num_layers=5, hidden_features=32, num_bins=8, flow_type="PRQCT"
-):
+def create_flow(input_size=1, num_layers=5, hidden_features=32, num_bins=8):
     """
     Creates a flow model.
     """
-    if input_size > 1.5:
+    if input_size > 1:
         return create_flow_prqct(
             input_size=input_size,
             num_layers=num_layers,
@@ -330,9 +337,7 @@ def create_flow(
 
 
 # =============================================================================
-def create_flow_prqct(
-    input_size=1, num_layers=5, hidden_features=32, num_bins=8, flow_type="PRQCT"
-):
+def create_flow_prqct(input_size=1, num_layers=5, hidden_features=32, num_bins=8):
     """
     Creates a flow model.
     """
@@ -420,7 +425,7 @@ def train_flow(
     save_model=False,
     load_existing=False,
     extra_noise=1e-4,
-    train_loss_avg=[],
+    train_loss_avg=None,
     normalization_stats=None,
 ):
     """
@@ -432,6 +437,8 @@ def train_flow(
     - 'cuda:X,Y,Z': Uses specified GPUs X,Y,Z with DataParallel (primary X).
     If num_epochs=0 and load_existing=True, loads the existing model from output_model.
     """
+    if train_loss_avg is None:
+        train_loss_avg = []
     original_nflow_model = model
 
     # If requested, load existing model and skip training
@@ -463,17 +470,17 @@ def train_flow(
     optimizer = torch.optim.Adam(active_model.parameters(), lr=learning_rate)
 
     # Ensure dataset_lines is correctly handled (assuming it's tensor or numpy)
-    if train_loader is None:
-        y_std_val = train_loader.y_std.numpy()
-        y_mean_val = train_loader.y_mean.numpy()
+    if normalization_stats is not None:
+        y_std_val = normalization_stats["std"].numpy()
+        y_mean_val = normalization_stats["mean"].numpy()
+    elif train_loader is not None and hasattr(train_loader.dataset, "y_std"):
+        y_std_val = train_loader.dataset.y_std.numpy()
+        y_mean_val = train_loader.dataset.y_mean.numpy()
     else:
-        if normalization_stats is not None:
-            y_std_val = normalization_stats["std"].numpy()
-            y_mean_val = normalization_stats["mean"].numpy()
-        else:
-            raise ValueError(
-                "Normalization stats must be provided if train_loader is None."
-            )
+        raise ValueError(
+            "Normalization stats must be provided when the training dataset "
+            "does not expose y_mean / y_std."
+        )
 
     y_std = torch.tensor(
         y_std_val, device=effective_primary_device, dtype=torch.float32
@@ -573,7 +580,7 @@ def plot_train_loss(train_loss_avg, show_plot=False, save_path=None):
 def check_variables_loader(
     model,
     train_loader,
-    plot_variables=[0, 1],
+    plot_variables=None,
     figsize=(8, 4),
     device="cpu",
     batch_size=500000,
@@ -594,7 +601,7 @@ def check_variables_loader(
 
     Shows the distribution of each selected variable compared to a standard normal.
     """
-    # Move model to device
+
     model = model.to(device)
     model.eval()
 
@@ -681,7 +688,7 @@ def check_variables_loader(
 def check_variables(
     model,
     train_loader,
-    plot_variables=[0, 1],
+    plot_variables=None,
     figsize=(8, 4),
     device="cpu",
     batch_size=50000,  # Now this parameter is actually used!
@@ -702,10 +709,7 @@ def check_variables(
 
     Shows the distribution of each selected variable compared to a standard normal.
     """
-    import time
 
-    # Move model to device
-    time.time()
     model = model.to(device)
     model.eval()
 
@@ -717,8 +721,9 @@ def check_variables(
     total_samples_needed = int(rel_size * dataset_size)
 
     # Step 1: Randomly sample indices
-    time.time()
-    random_indices = np.random.randint(0, dataset_size, size=total_samples_needed)
+    random_indices = np.random.choice(
+        dataset_size, size=min(total_samples_needed, dataset_size), replace=False
+    )
 
     # Step 2: Process in batches
     zz_batches = []
@@ -728,7 +733,6 @@ def check_variables(
 
     with torch.no_grad():
         for batch_idx in range(num_batches):
-            time.time()
 
             # Get batch indices
             start_idx = batch_idx * batch_size

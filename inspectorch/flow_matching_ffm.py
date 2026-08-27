@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import warnings
 import time
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -155,7 +156,8 @@ class FlowMatchingBackend(nn.Module):
             input_size (int): Dimensionality of the input data
             num_layers (int): Number of layers/blocks in the velocity network
             hidden_features (int): Number of hidden units
-            scheduler_n (float): Polynomial scheduler exponent (3.0 recommended)
+            scheduler_n (float): Exponent for a PolynomialConvexScheduler.
+                Leave as None (default) for the CondOT scheduler.
             architecture (str): "AdaMLP" (default), "ResNet", "ResNetFlow", or "FourierMLP"
             time_embedding_dim (int): Dimension of time embedding
             num_bins (int): Unused, for API compatibility with flowutils
@@ -241,13 +243,20 @@ class FlowMatchingBackend(nn.Module):
             print("  Using FourierMLP architecture")
         else:
             raise ValueError(
-                f"Unknown architecture: {architecture}. Choose from 'MLP', 'ResNet', or 'ResNetFlow'"
+                f"Unknown architecture: {architecture}. Choose from: "
+                f"'AdaMLP', 'ResNet', 'ResNetFlow', 'FourierMLP', 'MLPLegacy'"
             )
 
         # Create probability path with polynomial convex scheduler
         from flow_matching.path.scheduler import CondOTScheduler
 
-        self.prob_path = AffineProbPath(scheduler=CondOTScheduler())
+        if scheduler_n is None:
+            scheduler = CondOTScheduler()
+        else:
+            from flow_matching.path.scheduler import PolynomialConvexScheduler
+
+            scheduler = PolynomialConvexScheduler(n=scheduler_n)
+        self.prob_path = AffineProbPath(scheduler=scheduler)
 
     def print_summary(self):
         """
@@ -477,12 +486,21 @@ class FlowMatchingBackend(nn.Module):
         if steps is not None:
             step_size = 1.0 / steps
 
-        # Get data
+        # Get data. `norm_std` is the std the model's input was divided by.
         apply_mean_std_adjustment = False
+        norm_std = None
         if hasattr(inputs, "normalized_patches"):
             if dataset_normalization:
                 data = inputs.normalized_patches()
+                norm_std = getattr(inputs, "y_std", self.y_std)
             else:
+                warnings.warn(
+                    "dataset_normalization=False feeds raw patches to a model "
+                    "trained on standardised data; log-probs will be "
+                    "meaningless unless the input is already standardised.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
                 data = inputs.patches
         elif hasattr(inputs, "patches"):
             data = inputs.patches
@@ -495,6 +513,11 @@ class FlowMatchingBackend(nn.Module):
             apply_mean_std_adjustment = dataset_normalization
         else:
             raise ValueError(f"Unknown input type: {type(inputs)}")
+
+        if apply_mean_std_adjustment and self.y_mean is not None:
+            norm_std = self.y_std
+        # log p(x) = log p(y) - sum(log std); see utils.normalization_log_det.
+        log_det_norm = utils.normalization_log_det(norm_std, data.shape[1])
 
         # Data Loading
         dataset = torch.utils.data.TensorDataset(data)
@@ -603,14 +626,15 @@ class FlowMatchingBackend(nn.Module):
                 # Our integration is 1->0.
                 # Let's trust the SBI implementation which was verified.)
 
-                batch_log_prob = log_p_z - delta_log_p
+                batch_log_prob = log_p_z - delta_log_p + log_det_norm
                 log_probs.append(batch_log_prob.cpu().numpy())
 
         self.velocity_model.to("cpu")
         return np.concatenate(log_probs)
 
-    # The log_prob method using the original API produces a lot of noise if Hutchinson estimation is used.
-    def log_prob_WRONG(
+    # Cross-check implementation via the flow_matching library's own ODESolver.
+# Noisier than the torchdiffeq path when the Hutchinson estimator is used.
+    def _log_prob_library(
         self,
         inputs: Union[torch.Tensor, np.ndarray, object],
         dataset_normalization: bool = True,
@@ -726,6 +750,7 @@ class FlowMatchingBackend(nn.Module):
             Generated samples (and optionally trajectory)
         """
         self.velocity_model.eval()
+        _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
         # Sample from base distribution (standard Gaussian)
@@ -786,7 +811,7 @@ class FlowMatchingBackend(nn.Module):
     def check_variables(
         self,
         train_loader,
-        plot_variables=[0, 1],
+        plot_variables=None,
         figsize=(8, 4),
         device="cpu",
         batch_size=50000,
@@ -795,6 +820,8 @@ class FlowMatchingBackend(nn.Module):
         """
         Checks latent space by transforming samples backwards to noise.
         """
+        if plot_variables is None:
+            plot_variables = [0, 1]
         check_latent_space(
             self.velocity_model,
             train_loader,
@@ -834,7 +861,7 @@ def plot_train_loss(train_loss_avg, show_plot=False, save_path=None):
 def check_latent_space(
     velocity_model,
     train_loader,
-    plot_variables=[0, 1],
+    plot_variables=None,
     figsize=(8, 4),
     device="cpu",
     batch_size=50000,
@@ -849,6 +876,9 @@ def check_latent_space(
     t_span=[1.0, 0.0]. Otherwise, use compute_likelihood (which
     internally integrates backwards).
     """
+    if plot_variables is None:
+        plot_variables = [0, 1]
+
     velocity_model.eval()
     velocity_model.to(device)
 
@@ -859,7 +889,9 @@ def check_latent_space(
     total_samples = int(rel_size * dataset_size)
 
     # Sample random indices
-    random_indices = np.random.randint(0, dataset_size, size=total_samples)
+    random_indices = np.random.choice(
+        dataset_size, size=min(total_samples, dataset_size), replace=False
+    )
 
     z_batches = []
 

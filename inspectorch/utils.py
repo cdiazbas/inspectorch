@@ -56,8 +56,9 @@ def save_json(args, filename):
     import json
 
     args_dict = dict(args)
-    if not os.path.exists(os.path.dirname(filename)):
-        os.makedirs(os.path.dirname(filename))
+    directory = os.path.dirname(filename)
+    if directory:  # empty for a bare filename; makedirs("") raises
+        os.makedirs(directory, exist_ok=True)
     with open(filename, "w") as f:
         json.dump(args_dict, f, indent=4)
 
@@ -357,3 +358,34 @@ def configure_device(model_wrapper, device):
         active_model = model_wrapper.to(effective_primary_device)
 
     return active_model, effective_primary_device
+
+
+# =============================================================================
+def normalization_log_det(y_std, n_features):
+    """
+    log|det dy/dx| for the standardisation y = (x - mu) / std.
+
+    A density estimated on standardised data is a density in y. Converting
+    it back to the data coordinates x costs the Jacobian of that map:
+
+        log p(x) = log p(y) + log|det dy/dx| = log p(y) - sum(log std)
+
+    The offset is the same for every sample, so it does not change the
+    ranking used for rare-event detection -- but it is required for the
+    returned value to be a normalised density in the data coordinates.
+    Verified numerically: without it, exp(log_prob) integrates to
+    prod(std) rather than 1.
+
+    Args:
+        y_std (torch.Tensor or None): per-feature (or scalar) std.
+        n_features (int): number of features, used when y_std is a scalar.
+
+    Returns:
+        float: the additive correction, 0.0 when y_std is None.
+    """
+    if y_std is None:
+        return 0.0
+    y_std = torch.as_tensor(y_std)
+    if y_std.numel() == 1:
+        return float(-torch.log(y_std).reshape(()).item() * n_features)
+    return float(-torch.sum(torch.log(y_std)).item())
