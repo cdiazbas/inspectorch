@@ -29,26 +29,25 @@ dependencies = [
     "matplotlib>=3.3.0",
     "einops>=0.6.0",
     "scipy>=1.7.0",
-    "ipykernel>=6.0.0",
-    "jupyterlab>=3.0.0",
     "tqdm>=4.60.0",
     "flow_matching>=1.0.0",
     "torchdiffeq>=0.2.3",
     "torchcfm>=1.0.0",
     "pot>=0.9.0",
+    "scikit-learn>=1.0",
 ]
 
 [project.optional-dependencies]
 # Development tools
-dev = ["pytest", "pytest-cov", "ruff", "black"]
+dev = ["pytest", "pytest-cov", "ruff", "black", "pandas"]
 
-# Visualization
-viz = ["seaborn"]
+# Running the example notebooks
+notebook = ["ipykernel>=6.0.0", "jupyterlab>=3.0.0"]
 
 # Complete installation with all features
 all = [
-    "pytest", "pytest-cov", "ruff", "black",  # dev
-    "seaborn",  # viz
+    "pytest", "pytest-cov", "ruff", "black", "pandas",  # dev
+    "ipykernel>=6.0.0", "jupyterlab>=3.0.0",  # notebook
 ]
 
 [project.urls]
@@ -61,3 +60,13 @@ packages = ["inspectorch"]
 version_scheme = "no-guess-dev"
 local_scheme = "no-local-version"
 fallback_version = "1.0.dev0"
+
+[tool.ruff.lint]
+# Selected explicitly so the rule set does not drift between ruff versions
+# (pre-commit pins one, a developer's CLI may have another).
+#   B015/B018 - a comparison or expression whose result is discarded.
+#   F821      - undefined name.
+# F821 and F601 were previously ignored and were masking real defects, so
+# they are deliberately absent from `ignore` below.
+select = ["E4", "E7", "E9", "F", "B015", "B018"]
+ignore = ["E702", "E402", "E722"]
