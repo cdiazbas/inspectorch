@@ -17,7 +17,9 @@ def apply_dim_reduction(data, dim_reduction):
                 - 'n_components' (int, optional): Number of components for PCA (default: 10).
 
     Returns:
-        array-like: The data transformed to reduced dimensions.
+        tuple: (transformed data, the fitted reducer). Keep the reducer to
+        project new observations onto the same basis -- discarding it means
+        a second dataset cannot be compared with the first.
 
     Raises:
         ValueError: If an unknown dimensionality reduction method is specified.
@@ -27,7 +29,7 @@ def apply_dim_reduction(data, dim_reduction):
         n_components = dim_reduction.get("n_components", DEFAULT_N_COMPONENTS)
         reducer = PCAReducer(n_components)
         reduced_data = reducer.fit_transform(data)
-        return reduced_data
+        return reduced_data, reducer
     else:
         raise ValueError(f"Unknown dimensionality reduction method: {method}")
 

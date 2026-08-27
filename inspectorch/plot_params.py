@@ -30,7 +30,6 @@ params = {
     "axes.xmargin": 0.05,
     "axes.ymargin": 0.05,
     "axes3d.grid": True,
-    "backend": "module://ipykernel.pylab.backend_inline",
     "backend_fallback": True,
     "boxplot.bootstrap": None,
     "boxplot.boxprops.color": "black",
@@ -107,7 +106,6 @@ params = {
         "Felipa",
         "cursive",
     ],
-    "font.family": ["serif"],
     "font.fantasy": [
         "Comic Sans MS",
         "Chicago",
@@ -199,7 +197,6 @@ params = {
     "lines.markerfacecolor": "auto",
     "lines.markersize": 6.0,
     "lines.scale_dashes": True,
-    "lines.solid_capstyle": "projecting",
     "lines.solid_joinstyle": "round",
     "markers.fillstyle": "full",
     "mathtext.bf": "sans:bold",
@@ -258,7 +255,6 @@ params = {
     "xtick.alignment": "center",
     "xtick.bottom": True,
     "xtick.color": "black",
-    "xtick.direction": "in",
     "xtick.labelbottom": True,
     "xtick.labelsize": 17.5,
     "xtick.labeltop": False,
@@ -275,7 +271,6 @@ params = {
     "xtick.minor.width": 0.8,
     "ytick.alignment": "center_baseline",
     "ytick.color": "black",
-    "ytick.direction": "in",
     "ytick.labelleft": True,
     "ytick.labelright": False,
     "ytick.labelsize": 17.5,
@@ -315,7 +310,6 @@ def set_params():
     import shutil
     import warnings
 
-    import matplotlib.pyplot as plt
     import matplotlib.pylab as pylab
 
     active_params = params.copy()
@@ -328,7 +322,5 @@ def set_params():
         active_params["text.usetex"] = False
         active_params.pop("text.latex.preamble", None)
 
-    plt.show()  # This is necessary to avoid a bug in matplotlib
-    plt.rcParams.copy()
     pylab.rcParams.update(active_params)
     return

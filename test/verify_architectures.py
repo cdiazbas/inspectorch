@@ -6,8 +6,6 @@ velocity models.
 
 import sys
 
-sys.path.insert(0, "/mn/stornext/d20/RoCS/carlosjd/projects/INSPECTORCH/inspectorch")
-
 from inspectorch import DensityEstimator
 
 backends = ["flow_matching_ffm", "flow_matching_sbi", "flow_matching_cfm"]

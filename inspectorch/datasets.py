@@ -92,7 +92,9 @@ class GeneralizedPatchedDataset(torch.utils.data.Dataset):
             # Local import to prevent circular dependencies
             from inspectorch import dim_reduction as dr
 
-            self.patches = dr.apply_dim_reduction(self.patches, dim_reduction)
+            self.patches, self.reducer = dr.apply_dim_reduction(
+                self.patches, dim_reduction
+            )
 
         # Compute mean and std for normalization
         # Local import to prevent circular dependencies

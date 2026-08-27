@@ -111,7 +111,7 @@ def plot_results(name, data, samples, log_probs_grid=None, extent=None):
 # === Tester ===
 
 
-def test_backend(backend_name, data, sequence_length=1):
+def run_backend(backend_name, data, sequence_length=1):
     print(f"\n{'=' * 20} Testing Backend: {backend_name} {'=' * 20}")
 
     metrics = {
@@ -380,7 +380,7 @@ def main():
     results = []
     for b in backends:
         try:
-            m = test_backend(b, data)
+            m = run_backend(b, data)
             results.append(m)
         except Exception as e:
             print(f"FATAL ERROR TESTING {b}: {e}")

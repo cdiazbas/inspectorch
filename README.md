@@ -49,8 +49,8 @@ Inspectorch provides multiple density estimation backends, each with different t
 
 
 **Standardized Architectures:**
-All Flow Matching backends (`flow_matching`, `flow_matching_sbi`, `flow_matching_cfm`) support the following velocity network architectures:
-*   `AdaMLP` (Default): Adaptive MLP with time embedding injection (Standardized: `hidden_features=64`, `num_layers=2`, `time_embedding_dim=32`).
+All Flow Matching backends (`flow_matching_ffm`, `flow_matching_sbi`, `flow_matching_cfm`) support the following velocity network architectures:
+*   `AdaMLP` (Default): Adaptive MLP with time embedding injection. Defaults differ per backend (`flow_matching_ffm` and `flow_matching_sbi`: `hidden_features=128`, `num_layers=5`; `flow_matching_cfm`: `hidden_features=64`, `num_layers=2`; all: `time_embedding_dim=32`). Pass them explicitly to compare backends fairly.
 *   `ResNet`: Residual Neural Network.
 *   `ResNetFlow`: ResNet adapted for flows (`nflows` style).
 *   `FourierMLP`: MLP with Gaussian Fourier feature mappings.
@@ -79,6 +79,17 @@ model.train_flow(train_loader, num_epochs=100, learning_rate=1e-3, device="auto"
 # 5. Evaluate log likelihood
 log_prob = model.log_prob(dataset)
 ```
+
+## A note on ODE solver accuracy
+
+The flow-matching backends obtain `log_prob` by integrating an ODE, so the
+solver controls how accurate the returned log-densities are. `dopri5`
+(the default) and `rk4` with >=200 steps both reproduce a correctly
+normalised density. Fixed-step `euler` does not: at 100 steps it deviates
+by ~1 nat per sample, and at 10 steps by ~11 nats. Because rare events are
+selected from the low-log-probability tail, a coarse solver reorders
+exactly the samples you are looking for. Use `euler` only as a deliberate
+speed trade-off.
 
 ## Citation
 

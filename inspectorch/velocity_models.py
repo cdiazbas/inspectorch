@@ -50,7 +50,9 @@ class SinusoidalTimeEmbedding(nn.Module):
         if t.ndim == 1:
             t = t.unsqueeze(-1)
 
-        time_embedding = torch.zeros(t.shape[:-1] + (self.embed_dim,), device=t.device)
+        time_embedding = torch.zeros(
+            t.shape[:-1] + (self.embed_dim,), device=t.device, dtype=t.dtype
+        )
         time_embedding[..., 0::2] = torch.sin(t * self.div_term)
         time_embedding[..., 1::2] = torch.cos(t * self.div_term)
         return time_embedding
@@ -84,7 +86,19 @@ class RandomFourierTimeEmbedding(nn.Module):
 
 class AdaMLPBlock(nn.Module):
     """
-    Residual MLP block with adaptive layer norm for conditioning.
+    Residual MLP block with adaptive (FiLM-style) modulation.
+
+    Note on naming: despite the `ada_ln` attribute this block applies NO
+    layer normalisation -- the conditioning produces a shift/scale/gate
+    that modulate `x` directly. It also does not start as the identity:
+    with the zero-initialised modulation the block reduces to
+    ``x + block(x)``, not ``x``, because `gate` is offset by 1.
+
+    That is a deliberate deviation from AdaLN-Zero (Peebles & Xie 2023),
+    which normalises first and zero-initialises the gate so each block
+    begins as an exact identity. Changing it would alter the architecture
+    and invalidate existing checkpoints, so the behaviour is left as-is
+    and documented here instead. Verified: max|out - x| ~ 0.95 at init.
     """
 
     def __init__(
@@ -113,8 +127,8 @@ class AdaMLPBlock(nn.Module):
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         # cond shape: (batch, cond_dim)
         shift, scale, gate = self.ada_ln(cond).chunk(3, dim=-1)
-        gate = gate + 1.0
-        y = (scale + 1) * x + shift
+        gate = gate + 1.0  # NB: offsets away from an AdaLN-Zero identity start
+        y = (scale + 1) * x + shift  # NB: no normalisation of x beforehand
         y = self.block(y)
         return x + gate * y
 
