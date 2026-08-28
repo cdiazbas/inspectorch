@@ -197,7 +197,9 @@ class FlowMatchingBackend(nn.Module):
                 activation=act_type,
                 block_style=block_style,
             )
-            print(f"  Using VectorFieldAdaMLP (AdaMLP) architecture ({block_style} blocks)")
+            print(
+                f"  Using VectorFieldAdaMLP (AdaMLP) architecture ({block_style} blocks)"
+            )
 
         elif architecture.lower() == "mlplegacy":
             # Legacy support
@@ -638,7 +640,7 @@ class FlowMatchingBackend(nn.Module):
         return np.concatenate(log_probs)
 
     # Cross-check implementation via the flow_matching library's own ODESolver.
-# Noisier than the torchdiffeq path when the Hutchinson estimator is used.
+    # Noisier than the torchdiffeq path when the Hutchinson estimator is used.
     def _log_prob_library(
         self,
         inputs: Union[torch.Tensor, np.ndarray, object],

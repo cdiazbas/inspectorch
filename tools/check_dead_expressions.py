@@ -82,7 +82,9 @@ def check(path):
             isinstance(value, ast.Constant) and not isinstance(value.value, str)
         ):
             text = lines[node.lineno - 1].strip()
-            print(f"{path}:{node.lineno}: result of this expression is discarded: {text}")
+            print(
+                f"{path}:{node.lineno}: result of this expression is discarded: {text}"
+            )
             found += 1
 
     return found
