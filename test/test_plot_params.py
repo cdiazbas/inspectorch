@@ -66,3 +66,21 @@ def test_params_dict_not_mutated(monkeypatch):
 
     assert plot_params.params["text.usetex"] is True
     assert "text.latex.preamble" in plot_params.params
+
+
+def test_fallback_clears_a_preamble_left_by_earlier_code(monkeypatch):
+    """
+    The fallback must turn LaTeX off completely, not just unset usetex.
+
+    Omitting the key from the update left whatever rcParams already held,
+    so a preamble set earlier in the same session survived a fallback
+    that is meant to disable LaTeX entirely.
+    """
+    pylab.rcParams["text.latex.preamble"] = r"\usepackage{leftover}"
+    monkeypatch.setattr(shutil, "which", lambda cmd: None)
+
+    with pytest.warns(UserWarning):
+        plot_params.set_params()
+
+    assert pylab.rcParams["text.usetex"] is False
+    assert pylab.rcParams["text.latex.preamble"] == ""

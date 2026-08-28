@@ -320,7 +320,11 @@ def set_params():
             "for full LaTeX rendering."
         )
         active_params["text.usetex"] = False
-        active_params.pop("text.latex.preamble", None)
+        # Clear the preamble rather than just omitting it from the update:
+        # popping leaves whatever rcParams already held, so a preamble set
+        # earlier in the session would survive a fallback that is supposed
+        # to turn LaTeX off entirely.
+        active_params["text.latex.preamble"] = ""
 
     pylab.rcParams.update(active_params)
     return
