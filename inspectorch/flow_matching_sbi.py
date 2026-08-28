@@ -54,6 +54,7 @@ class FlowMatchingSBIBackend(nn.Module):
         time_embedding_dim: int = 32,
         context_dim: int = 0,
         architecture: str = "AdaMLP",
+        block_style: str = "adaln_zero",
         activation: nn.Module = nn.GELU(),
         dropout_probability: float = 0.0,
         use_batch_norm: bool = False,
@@ -83,8 +84,9 @@ class FlowMatchingSBIBackend(nn.Module):
                 num_layers=num_layers,
                 time_embedding_dim=time_embedding_dim,
                 activation=type(activation),
+                block_style=block_style,
             )
-            print("  Using VectorFieldAdaMLP architecture")
+            print(f"  Using VectorFieldAdaMLP architecture ({block_style} blocks)")
 
         elif architecture.lower() == "mlplegacy":
             self.velocity_model = VelocityMLPLegacy(

@@ -141,6 +141,7 @@ class FlowMatchingBackend(nn.Module):
         hidden_features: int = 128,
         scheduler_n: Optional[float] = None,
         architecture: str = "AdaMLP",
+        block_style: str = "adaln_zero",
         time_embedding_dim: int = 32,
         num_bins: Optional[
             int
@@ -159,6 +160,9 @@ class FlowMatchingBackend(nn.Module):
             scheduler_n (float): Exponent for a PolynomialConvexScheduler.
                 Leave as None (default) for the CondOT scheduler.
             architecture (str): "AdaMLP" (default), "ResNet", "ResNetFlow", or "FourierMLP"
+            block_style (str): For AdaMLP, "adaln_zero" (default) or "legacy".
+                Use "legacy" to reproduce checkpoints trained before
+                "adaln_zero" became the default. See AdaMLPBlock.
             time_embedding_dim (int): Dimension of time embedding
             num_bins (int): Unused, for API compatibility with flowutils
             activation: Activation function (for ResNetFlow, default: F.relu to match nflows)
@@ -191,8 +195,9 @@ class FlowMatchingBackend(nn.Module):
                 num_layers=num_layers,
                 time_embedding_dim=time_embedding_dim,
                 activation=act_type,
+                block_style=block_style,
             )
-            print("  Using VectorFieldAdaMLP (AdaMLP) architecture")
+            print(f"  Using VectorFieldAdaMLP (AdaMLP) architecture ({block_style} blocks)")
 
         elif architecture.lower() == "mlplegacy":
             # Legacy support

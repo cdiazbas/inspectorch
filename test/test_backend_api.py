@@ -200,3 +200,53 @@ def test_package_imports_without_optional_backends(monkeypatch):
 
     with pytest.raises(ImportError):
         package.DensityEstimator(type="flow_matching_ffm")
+
+
+# ------------------------------------------------------------ block style
+@pytest.mark.parametrize("kind", FLOW_MATCHING_BACKENDS)
+@pytest.mark.parametrize("style", ["adaln_zero", "legacy"])
+def test_adamlp_block_style_is_selectable(kind, style):
+    estimator = build_estimator(kind, architecture="AdaMLP", block_style=style)
+    blocks = [
+        layer for layer in estimator.velocity_model.layers if hasattr(layer, "style")
+    ]
+    assert blocks and all(block.style == style for block in blocks)
+
+
+def test_block_styles_share_a_parameter_set():
+    """
+    The two styles differ only in the forward pass.
+
+    That is what makes a checkpoint load silently into the wrong style,
+    so it is asserted rather than left implicit: anyone adding a
+    parameter to one style has to confront this test.
+    """
+    from inspectorch.velocity_models import AdaMLPBlock
+
+    zero = AdaMLPBlock(16, 16, style="adaln_zero")
+    legacy = AdaMLPBlock(16, 16, style="legacy")
+
+    assert set(zero.state_dict()) == set(legacy.state_dict())
+
+
+def test_adaln_zero_starts_as_identity_and_legacy_does_not():
+    """
+    The behavioural difference the styles exist to express.
+    """
+    from inspectorch.velocity_models import AdaMLPBlock
+
+    x, cond = torch.randn(8, 16), torch.zeros(8, 16)
+
+    zero = AdaMLPBlock(16, 16, style="adaln_zero")
+    legacy = AdaMLPBlock(16, 16, style="legacy")
+
+    with torch.no_grad():
+        assert torch.allclose(zero(x, cond), x, atol=1e-6)
+        assert not torch.allclose(legacy(x, cond), x, atol=1e-6)
+
+
+def test_unknown_block_style_raises():
+    from inspectorch.velocity_models import AdaMLPBlock
+
+    with pytest.raises(ValueError, match="Unknown block style"):
+        AdaMLPBlock(16, 16, style="not_a_style")

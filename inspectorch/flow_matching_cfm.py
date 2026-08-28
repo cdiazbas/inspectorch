@@ -140,6 +140,7 @@ class FlowMatchingCFMBackend(nn.Module):
         hidden_features: int = 64,
         num_layers: int = 2,
         architecture: str = "AdaMLP",
+        block_style: str = "adaln_zero",
         activation: nn.Module = nn.GELU(),
         dropout_probability: float = 0.0,
         use_batch_norm: bool = False,
@@ -167,8 +168,9 @@ class FlowMatchingCFMBackend(nn.Module):
                     hidden_features=hidden_features,
                     num_layers=num_layers,
                     time_embedding_dim=kwargs.get("time_embedding_dim", 32),
+                    block_style=block_style,
                 )
-                print("  Using VectorFieldAdaMLP architecture")
+                print(f"  Using VectorFieldAdaMLP architecture ({block_style} blocks)")
             else:
                 print(
                     "WARNING: VectorFieldAdaMLP not available. Using simple MLP fallback."

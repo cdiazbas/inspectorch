@@ -61,6 +61,9 @@ class DensityEstimator(nn.Module):
         - num_layers (int): Number of layers in velocity network (Default: 2).
         - architecture (str): Velocity network architecture. Default: "AdaMLP".
                               Options: "AdaMLP", "ResNet", "ResNetFlow", "FourierMLP", "MLPLegacy".
+        - block_style (str): For "AdaMLP", "adaln_zero" (default) or "legacy".
+                             Pass "legacy" to load checkpoints trained before
+                             "adaln_zero" became the default.
         - time_embedding_dim (int): Dimension of time embeddings (Default: 32).
         """
         self.backend.create_flow(*args, **kwargs)

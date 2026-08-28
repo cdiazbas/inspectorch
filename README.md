@@ -50,7 +50,10 @@ Inspectorch provides multiple density estimation backends, each with different t
 
 **Standardized Architectures:**
 All Flow Matching backends (`flow_matching_ffm`, `flow_matching_sbi`, `flow_matching_cfm`) support the following velocity network architectures:
-*   `AdaMLP` (Default): Adaptive MLP with time embedding injection. Defaults differ per backend (`flow_matching_ffm` and `flow_matching_sbi`: `hidden_features=128`, `num_layers=5`; `flow_matching_cfm`: `hidden_features=64`, `num_layers=2`; all: `time_embedding_dim=32`). Pass them explicitly to compare backends fairly.
+*   `AdaMLP` (Default): Adaptive MLP with time embedding injection. Two block
+    styles are available via `block_style=`: `adaln_zero` (default, AdaLN-Zero
+    as in DiT) and `legacy` (the original block, kept for reproducing older
+    checkpoints -- see "Choosing a block style" below). Defaults differ per backend (`flow_matching_ffm` and `flow_matching_sbi`: `hidden_features=128`, `num_layers=5`; `flow_matching_cfm`: `hidden_features=64`, `num_layers=2`; all: `time_embedding_dim=32`). Pass them explicitly to compare backends fairly.
 *   `ResNet`: Residual Neural Network.
 *   `ResNetFlow`: ResNet adapted for flows (`nflows` style).
 *   `FourierMLP`: MLP with Gaussian Fourier feature mappings.
@@ -79,6 +82,31 @@ model.train_flow(train_loader, num_epochs=100, learning_rate=1e-3, device="auto"
 # 5. Evaluate log likelihood
 log_prob = model.log_prob(dataset)
 ```
+
+## Choosing a block style
+
+`AdaMLP` blocks default to `block_style="adaln_zero"`: the features are layer
+normalised before the time/context modulation, and each block is gated from
+zero so it starts as an exact identity. The earlier block (`block_style="legacy"`)
+skipped the normalisation and offset the gate by 1, so it did not.
+
+Measured on Hinode spectra, held-out log-likelihood over 3 seeds (higher is
+better):
+
+| `num_layers` | `legacy` | `adaln_zero` |
+| ---: | ---: | ---: |
+| 2 | 91.9 ± 1.2 | 92.2 ± 0.4 |
+| 5 | 93.1 ± 0.6 | 92.7 ± 0.7 |
+| 20 | 83.2 ± 6.4 | 92.8 ± 0.2 |
+
+At shallow depth the two are within seed-to-seed noise. At depth the legacy
+block degrades sharply and becomes unstable across seeds, which is why
+`adaln_zero` is the default.
+
+**Loading an older checkpoint:** the two styles have identical parameter sets,
+so a `state_dict` trained under one loads into the other *without any error*
+and silently produces different results. Pass `block_style="legacy"` when
+loading a model trained before this became the default.
 
 ## A note on ODE solver accuracy
 

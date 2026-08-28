@@ -86,19 +86,35 @@ class RandomFourierTimeEmbedding(nn.Module):
 
 class AdaMLPBlock(nn.Module):
     """
-    Residual MLP block with adaptive (FiLM-style) modulation.
+    Residual MLP block with adaptive conditioning, in one of two styles.
 
-    Note on naming: despite the `ada_ln` attribute this block applies NO
-    layer normalisation -- the conditioning produces a shift/scale/gate
-    that modulate `x` directly. It also does not start as the identity:
-    with the zero-initialised modulation the block reduces to
-    ``x + block(x)``, not ``x``, because `gate` is offset by 1.
+    ``style="adaln_zero"`` (default) is AdaLN-Zero as in DiT (Peebles &
+    Xie 2023): normalise, modulate, and gate from zero so the block
+    starts as an exact identity::
 
-    That is a deliberate deviation from AdaLN-Zero (Peebles & Xie 2023),
-    which normalises first and zero-initialises the gate so each block
-    begins as an exact identity. Changing it would alter the architecture
-    and invalidate existing checkpoints, so the behaviour is left as-is
-    and documented here instead. Verified: max|out - x| ~ 0.95 at init.
+        x + gate * MLP(LayerNorm(x) * (1 + scale) + shift)
+
+    ``style="legacy"`` is the original inspectorch block, kept so that
+    checkpoints trained before the default changed still reproduce::
+
+        x + (gate + 1) * MLP((1 + scale) * x + shift)
+
+    It applies no normalisation and its ``gate + 1`` offset means it does
+    not start as an identity.
+
+    Both styles have identical parameter sets, so a state_dict saved
+    under one loads silently into the other and gives different results.
+    If you are loading a model trained before this default changed, pass
+    ``block_style="legacy"``.
+
+    Measured on Hinode spectra (held-out log-likelihood, 3 seeds), the
+    two are within seed noise at shallow depth, but the legacy block
+    degrades badly once the stack is deep:
+
+        depth   legacy            adaln_zero
+            2   91.9 +/- 1.2      92.2 +/- 0.4
+            5   93.1 +/- 0.6      92.7 +/- 0.7
+           20   83.2 +/- 6.4      92.8 +/- 0.2
     """
 
     def __init__(
@@ -107,16 +123,32 @@ class AdaMLPBlock(nn.Module):
         cond_dim: int,
         mlp_ratio: int = 4,
         activation: type[nn.Module] = nn.GELU,
+        style: str = "adaln_zero",
     ):
         super().__init__()
+        if style not in ("adaln_zero", "legacy"):
+            raise ValueError(
+                f"Unknown block style: {style}. Choose 'adaln_zero' or 'legacy'."
+            )
+        self.style = style
+
         self.ada_ln = nn.Sequential(
             nn.Linear(cond_dim, hidden_features),
             nn.SiLU(),
             nn.Linear(hidden_features, 3 * hidden_features),
         )
-        # Initialize last layer to zero for identity start
+        # Zero-init so that, in the adaln_zero style, the block starts as
+        # an exact identity and depth costs nothing at initialisation.
         nn.init.zeros_(self.ada_ln[-1].weight)
         nn.init.zeros_(self.ada_ln[-1].bias)
+
+        # elementwise_affine=False keeps the parameter set identical
+        # between the two styles.
+        self.norm = (
+            nn.LayerNorm(hidden_features, elementwise_affine=False)
+            if style == "adaln_zero"
+            else None
+        )
 
         self.block = nn.Sequential(
             nn.Linear(hidden_features, hidden_features * mlp_ratio),
@@ -127,9 +159,12 @@ class AdaMLPBlock(nn.Module):
     def forward(self, x: torch.Tensor, cond: torch.Tensor) -> torch.Tensor:
         # cond shape: (batch, cond_dim)
         shift, scale, gate = self.ada_ln(cond).chunk(3, dim=-1)
-        gate = gate + 1.0  # NB: offsets away from an AdaLN-Zero identity start
-        y = (scale + 1) * x + shift  # NB: no normalisation of x beforehand
-        y = self.block(y)
+        if self.style == "legacy":
+            gate = gate + 1.0
+            h = x
+        else:
+            h = self.norm(x)
+        y = self.block((scale + 1) * h + shift)
         return x + gate * y
 
 
@@ -191,8 +226,10 @@ class VectorFieldAdaMLP(nn.Module):
     """
     Adaptive MLP Vector Field Network (Recommended).
 
-    Uses AdaMLP blocks where time/context modulate features via AdaLN.
-    This is the default architecture for all flow matching backends.
+    Uses AdaMLP blocks where time/context modulate the features. See
+    AdaMLPBlock for the two available styles; pass
+    ``block_style="legacy"`` to reproduce checkpoints trained before
+    ``adaln_zero`` became the default.
     """
 
     def __init__(
@@ -203,9 +240,11 @@ class VectorFieldAdaMLP(nn.Module):
         num_layers: int = 5,
         time_embedding_dim: int = 32,
         activation: type[nn.Module] = nn.GELU,
+        block_style: str = "adaln_zero",
     ):
         super().__init__()
         self.input_dim = input_dim
+        self.block_style = block_style
 
         # Global embedding network (Time + Context -> Embedding)
         self.cond_emb_dim = hidden_features
@@ -231,6 +270,7 @@ class VectorFieldAdaMLP(nn.Module):
                     hidden_features=hidden_features,
                     cond_dim=self.cond_emb_dim,
                     activation=activation,
+                    style=block_style,
                 )
             )
 
