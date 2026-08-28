@@ -300,12 +300,53 @@ params = {
 }
 
 
+def supported_params(requested):
+    """
+    Keep only the rcParams the installed matplotlib still accepts.
+
+    The `params` dict above was captured from an older matplotlib, and
+    entries get deprecated and then removed as matplotlib evolves --
+    `text.hinting_factor`, for instance, was deprecated in 3.11 and is
+    due for removal in 3.13. Setting such a key raises a
+    MatplotlibDeprecationWarning today and will fail outright later, so
+    unknown and deprecated keys are dropped instead of applied.
+
+    Args:
+        requested (dict): rcParams the caller would like to set.
+
+    Returns:
+        dict: the subset this matplotlib accepts without complaint.
+    """
+    import warnings
+
+    import matplotlib
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        scratch = matplotlib.rcParams.copy()
+
+    usable = {}
+    for key, value in requested.items():
+        if key not in scratch:
+            continue  # removed from matplotlib entirely
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            try:
+                scratch[key] = value
+            except Exception:
+                continue  # rejected by this matplotlib's validator
+        if not any("Deprecat" in entry.category.__name__ for entry in caught):
+            usable[key] = value
+    return usable
+
+
 def set_params():
     """
     Set the default plotting parameters.
 
     Falls back to matplotlib's built-in mathtext when no LaTeX
-    installation is available on the system.
+    installation is available on the system, and skips any rcParams the
+    installed matplotlib has deprecated or removed.
     """
     import shutil
     import warnings
@@ -317,7 +358,8 @@ def set_params():
         warnings.warn(
             "No 'latex' executable found; falling back to matplotlib's "
             "built-in mathtext. Install a TeX distribution (e.g. TeX Live) "
-            "for full LaTeX rendering."
+            "for full LaTeX rendering.",
+            stacklevel=2,
         )
         active_params["text.usetex"] = False
         # Clear the preamble rather than just omitting it from the update:
@@ -326,5 +368,5 @@ def set_params():
         # to turn LaTeX off entirely.
         active_params["text.latex.preamble"] = ""
 
-    pylab.rcParams.update(active_params)
+    pylab.rcParams.update(supported_params(active_params))
     return

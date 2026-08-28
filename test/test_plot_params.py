@@ -84,3 +84,35 @@ def test_fallback_clears_a_preamble_left_by_earlier_code(monkeypatch):
 
     assert pylab.rcParams["text.usetex"] is False
     assert pylab.rcParams["text.latex.preamble"] == ""
+
+
+def test_no_warning_from_deprecated_rcparams(monkeypatch):
+    """
+    set_params must stay silent as matplotlib deprecates entries.
+
+    `params` was captured from an older matplotlib and keys get
+    deprecated then removed over time (text.hinting_factor: deprecated
+    in 3.11, due for removal in 3.13). Applying one warns today and
+    fails later, so they are filtered out instead.
+    """
+    monkeypatch.setattr(shutil, "which", lambda cmd: "/fake/bin/latex")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        plot_params.set_params()
+
+
+def test_unsupported_rcparams_are_dropped():
+    """Unknown keys are filtered rather than raising."""
+    usable = plot_params.supported_params(
+        {"figure.dpi": 123, "not.a.real.rcparam": "x"}
+    )
+
+    assert usable == {"figure.dpi": 123}
+
+
+def test_supported_params_keeps_the_bulk_of_the_style():
+    """The filter must not quietly discard the style it is there to apply."""
+    usable = plot_params.supported_params(plot_params.params)
+
+    assert len(usable) > 0.9 * len(plot_params.params)
