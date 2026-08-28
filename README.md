@@ -83,54 +83,7 @@ model.train_flow(train_loader, num_epochs=100, learning_rate=1e-3, device="auto"
 log_prob = model.log_prob(dataset)
 ```
 
-## Choosing a block style
 
-`AdaMLP` blocks default to `block_style="adaln_zero"`: the features are layer
-normalised before the time/context modulation, and each block is gated from
-zero so it starts as an exact identity. The earlier block (`block_style="legacy"`)
-skipped the normalisation and offset the gate by 1, so it did not.
-
-Measured on Hinode spectra, held-out log-likelihood over 3 seeds (higher is
-better):
-
-| `num_layers` | `legacy` | `adaln_zero` |
-| ---: | ---: | ---: |
-| 2 | 91.9 ± 1.2 | 92.2 ± 0.4 |
-| 5 | 93.1 ± 0.6 | 92.7 ± 0.7 |
-| 20 | 83.2 ± 6.4 | 92.8 ± 0.2 |
-
-At shallow depth the two are within seed-to-seed noise. At depth the legacy
-block degrades sharply and becomes unstable across seeds, which is why
-`adaln_zero` is the default.
-
-**Loading an older checkpoint:** the two styles have identical parameter sets,
-so a `state_dict` trained under one loads into the other *without any error*
-and silently produces different results. Pass `block_style="legacy"` when
-loading a model trained before this became the default.
-
-## A note on ODE solver accuracy
-
-The flow-matching backends obtain `log_prob` by integrating an ODE, so the
-solver and its step count decide how accurate the log-densities are. Fixed-step
-`euler` is the default and is usually the right trade-off, but the **number of
-steps matters**: measured on a perturbed (untrained) model, where a correct
-density must integrate to exactly 1, `euler` gives
-
-| steps | integral |
-| ---: | ---: |
-| 10 | 1.06 |
-| 50 | 1.01 |
-| 100 | 1.005 |
-| 400 | 1.001 |
-
-so roughly 100 steps or more is sensible; 10 is too coarse. Pass `steps=` (or
-`step_size=1/steps`) to set it.
-
-Adaptive `dopri5` is more accurate still, but on the `flow_matching_cfm`
-backend it can be a few hundred times slower for the same input, so it is not
-the default. If absolute log-density values matter to you (rather than the
-ranking, which is far less sensitive), check convergence by re-running with
-more steps and confirming the values stop moving.
 
 ## Citation
 

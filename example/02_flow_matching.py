@@ -156,7 +156,7 @@ log_prob = model.log_prob(
     # Fixed-step 'euler' is a good speed/accuracy trade-off, but the step
     # count matters: ~100 steps keeps the density within ~0.5% of correct,
     # 10 steps is too coarse. 'dopri5' is adaptive and more accurate, but
-    # markedly slower. See "A note on ODE solver accuracy" in the README.
+    # markedly slower.
     solver_method="euler",  # Options: 'dopri5', 'rk4', 'euler', 'midpoint'
     atol=1e-5,
     rtol=1e-5,
