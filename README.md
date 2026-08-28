@@ -83,13 +83,26 @@ log_prob = model.log_prob(dataset)
 ## A note on ODE solver accuracy
 
 The flow-matching backends obtain `log_prob` by integrating an ODE, so the
-solver controls how accurate the returned log-densities are. `dopri5`
-(the default) and `rk4` with >=200 steps both reproduce a correctly
-normalised density. Fixed-step `euler` does not: at 100 steps it deviates
-by ~1 nat per sample, and at 10 steps by ~11 nats. Because rare events are
-selected from the low-log-probability tail, a coarse solver reorders
-exactly the samples you are looking for. Use `euler` only as a deliberate
-speed trade-off.
+solver and its step count decide how accurate the log-densities are. Fixed-step
+`euler` is the default and is usually the right trade-off, but the **number of
+steps matters**: measured on a perturbed (untrained) model, where a correct
+density must integrate to exactly 1, `euler` gives
+
+| steps | integral |
+| ---: | ---: |
+| 10 | 1.06 |
+| 50 | 1.01 |
+| 100 | 1.005 |
+| 400 | 1.001 |
+
+so roughly 100 steps or more is sensible; 10 is too coarse. Pass `steps=` (or
+`step_size=1/steps`) to set it.
+
+Adaptive `dopri5` is more accurate still, but on the `flow_matching_cfm`
+backend it can be a few hundred times slower for the same input, so it is not
+the default. If absolute log-density values matter to you (rather than the
+ranking, which is far less sensitive), check convergence by re-running with
+more steps and confirming the values stop moving.
 
 ## Citation
 

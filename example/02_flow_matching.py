@@ -153,11 +153,11 @@ log_prob = model.log_prob(
     dataset_normalization=True,
     batch_size=1000,
     device=args.device,
-    # 'dopri5' (adaptive) and 'rk4' with >=200 steps give a correctly
-    # normalised density. Fixed-step 'euler' does not: ~1 nat of error at
-    # 100 steps, ~11 nats at 10, which reorders the low-log-prob tail the
-    # method exists to find. Use it only as a deliberate speed trade-off.
-    solver_method="dopri5",  # Options: 'dopri5', 'rk4', 'euler', 'midpoint'
+    # Fixed-step 'euler' is a good speed/accuracy trade-off, but the step
+    # count matters: ~100 steps keeps the density within ~0.5% of correct,
+    # 10 steps is too coarse. 'dopri5' is adaptive and more accurate, but
+    # markedly slower. See "A note on ODE solver accuracy" in the README.
+    solver_method="euler",  # Options: 'dopri5', 'rk4', 'euler', 'midpoint'
     atol=1e-5,
     rtol=1e-5,
     exact_divergence=False,  # Use Hutchinson estimator for speed (True = exact but slower)
@@ -280,7 +280,7 @@ num_samples = 100
 samples = model.sample(
     num_samples=num_samples,
     device=args.device,
-    solver_method="dopri5",
+    solver_method="euler",
     atol=1e-5,
     rtol=1e-5,
 )

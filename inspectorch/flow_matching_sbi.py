@@ -343,7 +343,7 @@ class FlowMatchingSBIBackend(nn.Module):
         batch_size: int = 1000,
         device: str = "cpu",
         context: Optional[torch.Tensor] = None,
-        solver_method: str = "dopri5",
+        solver_method: str = "euler",
         atol: float = 1e-5,
         rtol: float = 1e-5,
         exact_divergence: bool = False,

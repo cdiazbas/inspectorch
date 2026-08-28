@@ -565,7 +565,7 @@ class FlowMatchingCFMBackend(nn.Module):
         self,
         inputs: Union[torch.Tensor, np.ndarray, object],
         solver_method: str = "dopri5",
-        step_size: float = 0.1,  # Used if method is fixed step (e.g. euler)
+        step_size: float = 0.01,  # 100 fixed steps; 0.1 (=10) is too coarse
         device: str = "cpu",
         batch_size: int = 100,
         use_naive: bool = False,  # False: API (CFM-style), True: SBI-style
@@ -591,8 +591,8 @@ class FlowMatchingCFMBackend(nn.Module):
     def _log_prob_naive(
         self,
         inputs: Union[torch.Tensor, np.ndarray, object],
-        solver_method: str = "dopri5",
-        step_size: float = 0.1,
+        solver_method: str = "euler",
+        step_size: float = 0.01,
         device: str = "cpu",
         batch_size: int = 1000,
         atol: float = 1e-5,
@@ -612,15 +612,22 @@ class FlowMatchingCFMBackend(nn.Module):
         self.velocity_model.eval()
         self.velocity_model.to(device)
 
-        # Handle inputs (simplified from SBI - assume normalized_patches)
+        # Handle inputs. `norm_std` is the std the model's input was
+        # divided by; it drives the change-of-variables correction so that
+        # the result is a density in the data coordinates, matching the
+        # other backends. See utils.normalization_log_det.
+        norm_std = None
         if hasattr(inputs, "normalized_patches"):
             data = inputs.normalized_patches()
+            norm_std = getattr(inputs, "y_std", self.y_std)
         elif hasattr(inputs, "patches"):
             data = inputs.patches
         elif isinstance(inputs, np.ndarray):
             data = torch.from_numpy(inputs).float()
         else:
             data = inputs
+
+        log_det_norm = utils.normalization_log_det(norm_std, data.shape[1])
 
         dataset = torch.utils.data.TensorDataset(data)
         loader = torch.utils.data.DataLoader(
@@ -708,7 +715,7 @@ class FlowMatchingCFMBackend(nn.Module):
                     x_final**2, dim=1
                 )
 
-                batch_log_prob = log_p_z - delta_log_p
+                batch_log_prob = log_p_z - delta_log_p + log_det_norm
 
                 log_probs.append(batch_log_prob.cpu().numpy())
 
@@ -717,8 +724,8 @@ class FlowMatchingCFMBackend(nn.Module):
     def _log_prob_api(
         self,
         inputs: Union[torch.Tensor, np.ndarray, object],
-        solver_method: str = "dopri5",
-        step_size: float = 0.1,
+        solver_method: str = "euler",
+        step_size: float = 0.01,
         device: str = "cpu",
         batch_size: int = 1000,
         atol: float = 1e-5,
@@ -735,15 +742,19 @@ class FlowMatchingCFMBackend(nn.Module):
         self.velocity_model.eval()
         self.velocity_model.to(device)
 
-        # Input handling
+        # Input handling; see _log_prob_naive for `norm_std`.
+        norm_std = None
         if hasattr(inputs, "normalized_patches"):
             data = inputs.normalized_patches()
+            norm_std = getattr(inputs, "y_std", self.y_std)
         elif hasattr(inputs, "patches"):
             data = inputs.patches
         elif isinstance(inputs, np.ndarray):
             data = torch.from_numpy(inputs).float()
         else:
             data = inputs
+
+        log_det_norm = utils.normalization_log_det(norm_std, data.shape[1])
 
         dataset = torch.utils.data.TensorDataset(data)
         loader = torch.utils.data.DataLoader(
@@ -830,7 +841,7 @@ class FlowMatchingCFMBackend(nn.Module):
                 # log p(x0) (Prior at t=0 is Normal(0,1))
                 log_p_z0 = -0.5 * (math.log(2 * math.pi) + z0.pow(2)).sum(dim=-1)
 
-                log_prob = log_p_z0 - delta_logp
+                log_prob = log_p_z0 - delta_logp + log_det_norm
                 all_log_probs.append(log_prob.cpu().numpy())
 
         return np.concatenate(all_log_probs)
