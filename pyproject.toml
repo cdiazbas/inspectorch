@@ -70,3 +70,9 @@ fallback_version = "1.0.dev0"
 # they are deliberately absent from `ignore` below.
 select = ["E4", "E7", "E9", "F", "B015", "B018"]
 ignore = ["E702", "E402", "E722"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+markers = [
+    "slow: end-to-end runs of the example scripts (deselect with -m 'not slow')",
+]

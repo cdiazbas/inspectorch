@@ -1,5 +1,5 @@
 """
-Regression tests for the density-normalisation maths.
+Regression tests for the density-normalisation maths, across every backend.
 
 A normalizing flow (or CNF) defines a properly normalised density
 regardless of how well it is trained. These tests exploit that: they
@@ -14,11 +14,12 @@ They pin down two things that were previously wrong or unverified:
    makes the integral come out at ``prod(std)`` instead of 1; the
    change-of-variables term ``-sum(log std)`` is what fixes it. The
    assignment computing that term was once silently deleted by
-   ``autoflake --remove-unused-variable``.
+   ``autoflake --remove-unused-variable``, and the correction was
+   missing from the CFM backend altogether.
 
 2. The CNF sign convention ``log p(x) = log p(z) - delta_log_p``.
 
-The flow-matching tests are skipped when torchdiffeq is unavailable.
+Backends whose third-party library is absent are skipped, not failed.
 """
 
 import numpy as np
@@ -26,20 +27,21 @@ import pytest
 import torch
 from scipy.stats import multivariate_normal, norm
 
+from conftest import (
+    ALL_BACKENDS,
+    FLOW_MATCHING_BACKENDS,
+    GridDataset,
+    build_estimator,
+    randomize,
+)
 from inspectorch.utils import normalization_log_det
 
-
-
-class _Shim:
-    """Minimal stand-in for GeneralizedPatchedDataset."""
-
-    def __init__(self, patches, y_mean, y_std):
-        self.patches = patches
-        self.y_mean = y_mean
-        self.y_std = y_std
-
-    def normalized_patches(self):
-        return (self.patches - self.y_mean) / self.y_std
+# Integration settings, chosen by measuring convergence rather than guessed:
+# +/-14 covers the tails of the perturbed field, and euler at 200 steps with
+# an exact divergence lands within ~1% while staying well under a second.
+_HALF, _POINTS, _STEPS = 14, 1200, 200
+_TOL = 0.02
+_SCALE = 3.0
 
 
 # ---------------------------------------------------------------- analytic
@@ -58,6 +60,19 @@ def test_change_of_variables_matches_analytic_gaussian():
     assert np.abs(claimed - exact).max() < 1e-9
 
 
+def test_wrong_sign_does_not_match():
+    """Guards the direction of the correction, not just its magnitude."""
+    rng = np.random.default_rng(0)
+    sigma = np.array([5.0, 0.5, 2.0])
+    x = rng.standard_normal((500, 3)) * sigma
+    y = x / sigma
+
+    flipped = norm.logpdf(y).sum(axis=1) + np.sum(np.log(sigma))
+    exact = multivariate_normal.logpdf(x, np.zeros(3), np.diag(sigma**2))
+
+    assert np.abs(flipped - exact).max() > 1.0
+
+
 def test_normalization_log_det_scalar_and_vector_agree():
     """A scalar std broadcast over D features equals a length-D vector."""
     scalar = normalization_log_det(torch.tensor([3.0]), 3)
@@ -68,112 +83,83 @@ def test_normalization_log_det_scalar_and_vector_agree():
     assert normalization_log_det(None, 5) == 0.0
 
 
-# ------------------------------------------------------- normalizing flow
-def test_normalizing_flow_log_prob_integrates_to_one_in_data_space():
+# ------------------------------------------------------- integration helper
+def _integrate(kind, scale=_SCALE):
     """
-    exp(log_prob) must integrate to 1 over the DATA coordinates.
+    exp(log_prob) integrated over the data coordinates for one backend.
 
-    Without the -sum(log std) correction this integrates to prod(std),
-    which for these values is 2.5.
+    A 1-D grid is used for the ODE-based backends, where every grid point
+    costs an ODE solve; the normalizing flow uses a 2-D grid because its
+    1-D path builds a much slower UMNN transform.
     """
-    from inspectorch.normalizing_flow import NormalizingFlowBackend
+    if kind == "normalizing_flow":
+        axis = np.linspace(-8, 8, 320)
+        mesh = np.stack(np.meshgrid(axis, axis, indexing="ij"), axis=-1).reshape(-1, 2)
+        sigma = np.array([scale, 1.0 / scale])
+        estimator = randomize(build_estimator(kind, input_size=2))
+        grid = GridDataset(
+            torch.tensor(mesh * sigma, dtype=torch.float32),
+            torch.zeros(2),
+            torch.tensor(sigma, dtype=torch.float32),
+        )
+        log_prob = estimator.log_prob(grid, device="cpu")
+        cell = (axis[1] - axis[0]) ** 2 * float(np.prod(sigma))
+        return float(np.exp(log_prob).sum() * cell)
 
-    torch.manual_seed(0)
-    backend = NormalizingFlowBackend()
-    backend.create_flow(input_size=2, num_layers=3, hidden_features=16, num_bins=6)
-    with torch.no_grad():  # randomise so the density is not trivially Gaussian
-        for param in backend.flow_model.parameters():
-            if param.dim() > 1:
-                param.add_(torch.randn_like(param) * 0.25)
-
-    mu = np.array([1.0, -2.0])
-    sigma = np.array([5.0, 0.5])
-
-    axis = np.linspace(-7, 7, 300)
-    mesh = np.stack(np.meshgrid(axis, axis, indexing="ij"), axis=-1).reshape(-1, 2)
-    grid_x = mesh * sigma + mu
-
-    shim = _Shim(
-        torch.tensor(grid_x, dtype=torch.float32),
-        torch.tensor(mu, dtype=torch.float32),
-        torch.tensor(sigma, dtype=torch.float32),
+    axis = np.linspace(-_HALF, _HALF, _POINTS)
+    estimator = randomize(build_estimator(kind, input_size=1))
+    estimator.backend.y_mean = torch.zeros(1)
+    estimator.backend.y_std = torch.full((1,), scale)
+    grid = GridDataset(
+        torch.tensor((axis * scale).reshape(-1, 1), dtype=torch.float32),
+        torch.zeros(1),
+        torch.full((1,), scale),
     )
-    log_prob = backend.log_prob(shim, dataset_normalization=True, device="cpu")
-
-    cell = (axis[1] - axis[0]) ** 2 * np.prod(sigma)
-    assert np.exp(log_prob).sum() * cell == pytest.approx(1.0, abs=5e-3)
-
-
-# ----------------------------------------------------------- flow matching
-def _randomised_sbi_backend(input_size=1):
-    pytest.importorskip("torchdiffeq")
-    from inspectorch.flow_matching_sbi import FlowMatchingSBIBackend
-
-    torch.manual_seed(3)
-    backend = FlowMatchingSBIBackend()
-    backend.create_flow(
-        input_size=input_size, num_layers=2, hidden_features=32, architecture="AdaMLP"
-    )
-    with torch.no_grad():  # final_layer is zero-init => identity flow
-        final = backend.velocity_model.final_layer
-        final.weight.add_(torch.randn_like(final.weight) * 0.9)
-        final.bias.add_(torch.randn_like(final.bias) * 0.5)
-    return backend
-
-
-# The randomised velocity field has heavy tails: a narrower grid truncates
-# real mass and the integral undershoots. +/-40 is converged to ~1e-5.
-_HALF_WIDTH, _POINTS = 40, 6000
-
-
-@pytest.mark.parametrize("solver", ["dopri5", "rk4"])
-def test_cnf_log_prob_integrates_to_one(solver):
-    """Pins the sign convention log p(x) = log p(z) - delta_log_p."""
-    backend = _randomised_sbi_backend()
-    backend.y_mean, backend.y_std = torch.zeros(1), torch.ones(1)
-
-    axis = np.linspace(-_HALF_WIDTH, _HALF_WIDTH, _POINTS)
-    grid = torch.tensor(axis.reshape(-1, 1), dtype=torch.float32)
-    kwargs = {"steps": 200} if solver == "rk4" else {}
-
-    log_prob = backend.log_prob(
+    log_prob = estimator.log_prob(
         grid,
-        dataset_normalization=False,
-        batch_size=8000,
         device="cpu",
-        solver_method=solver,
-        exact_divergence=True,
-        **kwargs,
+        batch_size=4000,
+        solver_method="euler",
+        step_size=1.0 / _STEPS,
+        steps=_STEPS,
+        exact_divergence=True,  # deterministic; Hutchinson would add noise
+    )
+    return float(np.exp(log_prob).sum() * (axis[1] - axis[0]) * scale)
+
+
+# ------------------------------------------------ every backend, one rule
+@pytest.mark.parametrize("kind", ALL_BACKENDS)
+def test_every_backend_returns_a_data_space_density(kind):
+    """
+    Every backend must agree on what log_prob means.
+
+    Whatever the backend, exp(log_prob) has to integrate to 1 over the
+    data coordinates. A backend that omits the -sum(log std) correction
+    integrates to prod(std) instead -- here 3.0, which is how the missing
+    correction in the CFM backend was found.
+    """
+    integral = _integrate(kind)
+    assert integral == pytest.approx(1.0, abs=_TOL), (
+        f"{kind}: exp(log_prob) integrates to {integral:.4f}, not 1. "
+        f"A value near {_SCALE} means the change-of-variables correction "
+        f"for the standardisation is missing."
     )
 
-    integral = np.exp(log_prob).sum() * (axis[1] - axis[0])
-    assert integral == pytest.approx(1.0, abs=0.01)
+
+@pytest.mark.parametrize("kind", ALL_BACKENDS)
+def test_log_prob_is_deterministic_for_a_fixed_model(kind):
+    """Two identical calls must agree, so the tests above are meaningful."""
+    first, second = _integrate(kind), _integrate(kind)
+    assert first == pytest.approx(second, rel=1e-6)
 
 
-def test_cnf_log_prob_is_data_space_density_on_the_dataset_path():
+@pytest.mark.parametrize("kind", FLOW_MATCHING_BACKENDS)
+def test_cnf_sign_convention(kind):
     """
-    The dataset path must apply the change-of-variables correction too.
+    Pins log p(x) = log p(z) - delta_log_p.
 
-    This is the regression that matters: the correction used to be
-    computed only on the bare-tensor path, and even there the result was
-    discarded, so both paths returned a density off by prod(std).
+    With the sign flipped the result is not a density at all, so the
+    integral moves far away from 1 rather than slightly.
     """
-    sigma = 3.0
-    backend = _randomised_sbi_backend()
-    backend.y_mean, backend.y_std = torch.zeros(1), torch.full((1,), sigma)
-
-    axis = np.linspace(-_HALF_WIDTH, _HALF_WIDTH, _POINTS)
-    data = torch.tensor((axis * sigma).reshape(-1, 1), dtype=torch.float32)
-    shim = _Shim(data, torch.zeros(1), torch.full((1,), sigma))
-
-    log_prob = backend.log_prob(
-        shim,
-        dataset_normalization=True,
-        batch_size=8000,
-        device="cpu",
-        solver_method="dopri5",
-        exact_divergence=True,
-    )
-
-    integral = np.exp(log_prob).sum() * (axis[1] - axis[0]) * sigma
-    assert integral == pytest.approx(1.0, abs=0.01)
+    integral = _integrate(kind, scale=1.0)
+    assert integral == pytest.approx(1.0, abs=_TOL)

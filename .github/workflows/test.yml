@@ -33,4 +33,11 @@ jobs:
         run: python tools/check_dead_expressions.py inspectorch/*.py test/*.py
 
       - name: Test
-        run: pytest test/ -q
+        run: pytest -q -m "not slow"
+
+      # The example scripts are the documented entry point, so they are
+      # run end to end (on a subsampled cube, one epoch) rather than only
+      # linted. Slower, so they run once rather than per Python version.
+      - name: Test examples end to end
+        if: matrix.python-version == '3.11'
+        run: pytest -q -m slow
