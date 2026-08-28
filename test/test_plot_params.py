@@ -88,31 +88,17 @@ def test_fallback_clears_a_preamble_left_by_earlier_code(monkeypatch):
 
 def test_no_warning_from_deprecated_rcparams(monkeypatch):
     """
-    set_params must stay silent as matplotlib deprecates entries.
+    set_params must apply cleanly on the installed matplotlib.
 
-    `params` was captured from an older matplotlib and keys get
-    deprecated then removed over time (text.hinting_factor: deprecated
-    in 3.11, due for removal in 3.13). Applying one warns today and
-    fails later, so they are filtered out instead.
+    `params` was captured from an older matplotlib, and keys get
+    deprecated and then removed as matplotlib evolves --
+    text.hinting_factor was deprecated in 3.11 and deleted from `params`
+    for that reason. When this test starts failing, matplotlib has
+    deprecated another entry: the warning names it, and the fix is to
+    delete that line too.
     """
     monkeypatch.setattr(shutil, "which", lambda cmd: "/fake/bin/latex")
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         plot_params.set_params()
-
-
-def test_unsupported_rcparams_are_dropped():
-    """Unknown keys are filtered rather than raising."""
-    usable = plot_params.supported_params(
-        {"figure.dpi": 123, "not.a.real.rcparam": "x"}
-    )
-
-    assert usable == {"figure.dpi": 123}
-
-
-def test_supported_params_keeps_the_bulk_of_the_style():
-    """The filter must not quietly discard the style it is there to apply."""
-    usable = plot_params.supported_params(plot_params.params)
-
-    assert len(usable) > 0.9 * len(plot_params.params)
