@@ -391,7 +391,7 @@ class FlowMatchingSBIBackend(nn.Module):
         t_span = torch.tensor([1.0, 0.0], device=device)
         # Handle fixed step solvers which might need explicit grid
         if solver_method in ["euler", "rk4", "midpoint"]:
-            # Check if step_size was passed in kwargs (test_backends uses it)
+            # Check if step_size was passed in kwargs (tools/benchmark_backends.py uses it)
             step_size = kwargs.get("step_size", None)
 
             if step_size is not None:
