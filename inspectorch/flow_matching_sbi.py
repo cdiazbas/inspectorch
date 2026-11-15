@@ -297,7 +297,7 @@ class FlowMatchingSBIBackend(nn.Module):
 
         # 1. Sample Noise (x0)
         # Assuming input_dim is known from model output layer
-        input_dim = self.velocity_model.final_layer.out_features
+        input_dim = self.velocity_model.input_dim
         x0 = torch.randn(num_samples, input_dim, device=device)
 
         # 2. Define ODE function
