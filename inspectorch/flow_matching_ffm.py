@@ -637,26 +637,14 @@ class FlowMatchingBackend(nn.Module):
         _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
-        # Get data
-        if hasattr(inputs, "normalized_patches"):
-            if dataset_normalization:
-                data = inputs.normalized_patches()
-            else:
-                data = inputs.patches
-        elif hasattr(inputs, "patches"):
-            if dataset_normalization:
-                data = (inputs.patches - self.y_mean) / self.y_std
-            else:
-                data = inputs.patches
-        else:
-            if dataset_normalization and self.y_mean is not None:
-                # Ensure stats are on device
-                if self.y_mean.device != device:
-                    self.y_mean = self.y_mean.to(device)
-                    self.y_std = self.y_std.to(device)
-                data = (inputs.to(device) - self.y_mean) / self.y_std
-            else:
-                data = inputs
+        # Same inputs and the same change-of-variables term as log_prob, so
+        # the two can be compared value by value.
+        data, mean, std, norm_std = utils.log_prob_inputs(
+            inputs, dataset_normalization, self.y_mean, self.y_std
+        )
+        if mean is not None:
+            mean, std = mean.to(device), std.to(device)
+        log_det_norm = utils.normalization_log_det(norm_std, data.shape[1])
 
         log_probs = []
 
@@ -674,17 +662,19 @@ class FlowMatchingBackend(nn.Module):
                 desc="Computing log-prob (original)",
             ):
                 batch = data[i : i + batch_size].to(device)
+                if mean is not None:
+                    batch = (batch - mean) / std
 
-                # Remove any remaining NaNs
-                nan_mask = torch.isnan(batch).any(dim=1)
-                if nan_mask.any():
-                    batch = batch[~nan_mask]
-
-                if batch.shape[0] == 0:
+                # Rows with NaN get NaN, so the output stays aligned with
+                # the input.
+                ok = ~torch.isnan(batch).any(dim=1)
+                out = torch.full((batch.shape[0],), float("nan"), device=device)
+                if not ok.any():
+                    log_probs.append(out.cpu().numpy())
                     continue
 
                 x_0, log_likelihood = solver.compute_likelihood(
-                    x_1=batch,
+                    x_1=batch[ok],
                     log_p0=log_p0,
                     step_size=step_size,
                     method=solver_method,
@@ -694,7 +684,8 @@ class FlowMatchingBackend(nn.Module):
                     enable_grad=False,
                 )
 
-                log_probs.append(log_likelihood.cpu().numpy())
+                out[ok] = log_likelihood.to(out.dtype) + log_det_norm
+                log_probs.append(out.cpu().numpy())
 
         self.velocity_model.to("cpu")
         return np.concatenate(log_probs)
