@@ -77,9 +77,19 @@ class TwoTimeNet(nn.Module):
     """
 
     def __init__(
-        self, input_size, hidden_features=256, num_layers=4, time_dim=32, div_head=False
+        self,
+        input_size,
+        hidden_features=256,
+        num_layers=4,
+        time_dim=32,
+        div_head=False,
+        time_scale=1.0,
     ):
         super().__init__()
+        # Factor on a and b - a before the sinusoidal embeddings, whose
+        # frequencies span 1 .. 1/1000 (see VectorFieldAdaMLP). Opt-in: 1 keeps
+        # existing checkpoints meaningful.
+        self.time_scale = float(time_scale)
         self.emb_a = _TimeEmbedding(time_dim)
         self.emb_d = _TimeEmbedding(time_dim)
         self.inp = nn.Linear(input_size + 2 * time_dim, hidden_features)
@@ -107,7 +117,8 @@ class TwoTimeNet(nn.Module):
         )
 
     def _features(self, x, a, b):
-        h = self.inp(torch.cat((x, self.emb_a(a), self.emb_d(b - a)), dim=-1))
+        k = self.time_scale
+        h = self.inp(torch.cat((x, self.emb_a(k * a), self.emb_d(k * (b - a))), dim=-1))
         for block in self.blocks:
             h = h + block(h)
         return h
@@ -350,7 +361,13 @@ class FastFlowEstimator(nn.Module):
 
     # ------------------------------------------------------------------
     def create_flow(
-        self, input_size, hidden_features=256, num_layers=4, time_dim=32, **nf_kwargs
+        self,
+        input_size,
+        hidden_features=256,
+        num_layers=4,
+        time_dim=32,
+        time_scale=1.0,
+        **nf_kwargs,
     ):
         if self.kind == "regflow":
             from .normalizing_flow import create_flow
@@ -368,6 +385,7 @@ class FastFlowEstimator(nn.Module):
                 num_layers,
                 time_dim,
                 div_head=self.kind == "f2d2",
+                time_scale=time_scale,
             )
         return self
 

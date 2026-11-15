@@ -225,3 +225,20 @@ def test_estimator_log_prob_and_sample_are_in_the_data_coordinates():
     x = est.sample(20000, steps=2).numpy()
     np.testing.assert_allclose(x.mean(0), m, atol=0.05 * s.max())
     np.testing.assert_allclose(x.std(0), s, rtol=0.03)
+
+
+def test_time_scale_scales_both_time_inputs_and_defaults_to_one():
+    """TwoTimeNet with time_scale=k is the same network fed (k a, k b)."""
+    # float64: 1000 (b - a) and 1000 b - 1000 a round differently in float32,
+    # and phases of up to 1000 rad amplify that to ~1e-5.
+    torch.manual_seed(0)
+    scaled = ff.TwoTimeNet(D, 16, 1, time_scale=1000.0).double()
+    plain = ff.TwoTimeNet(D, 16, 1).double()
+    plain.load_state_dict(scaled.state_dict())
+    x = torch.randn(8, D, dtype=torch.float64)
+    a, b = torch.rand(8, 1, dtype=torch.float64), torch.rand(8, 1, dtype=torch.float64)
+    with torch.no_grad():
+        torch.testing.assert_close(
+            scaled(x, a, b), plain(x, 1000.0 * a, 1000.0 * b), rtol=0, atol=1e-9
+        )
+    assert plain.time_scale == 1.0
