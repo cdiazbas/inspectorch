@@ -10,7 +10,10 @@ class GeneralizedPatchedDataset(torch.utils.data.Dataset):
     A highly flexible PyTorch Dataset that uses named dimensions and einops to
     extract patches and prepare data for a normalizing flow.
 
-    Includes automatic padding to preserve spatial/temporal dimensions.
+    Patches are cut without padding: an axis of length n patched with size p
+    and stride s gives (n - p) // s + 1 positions, so the patched grid is
+    smaller than the input and a log_prob over it reshapes to that grid,
+    not to the input's.
     """
 
     def __init__(
