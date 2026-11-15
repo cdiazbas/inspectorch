@@ -347,10 +347,10 @@ class FlowMatchingSBIBackend(nn.Module):
         batch_size: int = 1000,
         device: str = "cpu",
         context: Optional[torch.Tensor] = None,
-        solver_method: str = "euler",
+        solver_method: str = "dopri5",
         atol: float = 1e-5,
         rtol: float = 1e-5,
-        exact_divergence: bool = False,
+        exact_divergence: bool = True,
         hutchinson_seed: int = 0,
         steps: int = 100,  # Kept for compatibility but unused if solver is adaptive
         **kwargs,

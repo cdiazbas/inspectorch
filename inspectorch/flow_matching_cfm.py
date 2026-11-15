@@ -577,6 +577,7 @@ class FlowMatchingCFMBackend(nn.Module):
         inputs: Union[torch.Tensor, np.ndarray, object],
         solver_method: str = "dopri5",
         step_size: Optional[float] = None,
+        exact_divergence: bool = True,
         device: str = "cpu",
         batch_size: int = 100,
         use_naive: bool = False,  # False: API (CFM-style), True: SBI-style
@@ -595,11 +596,23 @@ class FlowMatchingCFMBackend(nn.Module):
         """
         if use_naive:
             return self._log_prob_naive(
-                inputs, solver_method, step_size, device, batch_size, **kwargs
+                inputs,
+                solver_method,
+                step_size,
+                device,
+                batch_size,
+                exact_divergence=exact_divergence,
+                **kwargs,
             )
         else:
             return self._log_prob_api(
-                inputs, solver_method, step_size, device, batch_size, **kwargs
+                inputs,
+                solver_method,
+                step_size,
+                device,
+                batch_size,
+                exact_divergence=exact_divergence,
+                **kwargs,
             )
 
     def _log_prob_naive(
@@ -611,7 +624,7 @@ class FlowMatchingCFMBackend(nn.Module):
         batch_size: int = 1000,
         atol: float = 1e-5,
         rtol: float = 1e-5,
-        exact_divergence: bool = False,
+        exact_divergence: bool = True,
         hutchinson_seed: int = 0,
         steps: int = 100,
         dataset_normalization: bool = True,
@@ -746,7 +759,7 @@ class FlowMatchingCFMBackend(nn.Module):
         batch_size: int = 1000,
         atol: float = 1e-5,
         rtol: float = 1e-5,
-        exact_divergence: bool = False,
+        exact_divergence: bool = True,
         hutchinson_seed: int = 0,
         steps: int = 100,
         dataset_normalization: bool = True,

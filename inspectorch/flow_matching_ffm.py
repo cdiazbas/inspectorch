@@ -462,7 +462,7 @@ class FlowMatchingBackend(nn.Module):
         solver_method: str = "dopri5",
         atol: float = 1e-5,
         rtol: float = 1e-5,
-        exact_divergence: bool = False,
+        exact_divergence: bool = True,
         hutchinson_seed: int = 0,
         step_size: float = 0.01,  # Default to 0.01 (100 steps)
         steps: Optional[int] = None,  # Accept explicit steps count
@@ -631,7 +631,7 @@ class FlowMatchingBackend(nn.Module):
         solver_method: str = "dopri5",
         atol: float = 1e-5,
         rtol: float = 1e-5,
-        exact_divergence: bool = False,
+        exact_divergence: bool = True,
         step_size: float = 0.1,
     ) -> np.ndarray:
         """
