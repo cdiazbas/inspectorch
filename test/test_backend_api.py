@@ -352,3 +352,31 @@ def test_unknown_block_style_raises():
 
     with pytest.raises(ValueError, match="Unknown block style"):
         AdaMLPBlock(16, 16, style="not_a_style")
+
+
+def test_time_scale_scales_the_time_input_and_defaults_to_one():
+    """time_scale=k is the same network fed k * t; the default changes nothing."""
+    from inspectorch.velocity_models import VectorFieldAdaMLP
+
+    torch.manual_seed(0)
+    scaled = VectorFieldAdaMLP(
+        4, 0, hidden_features=16, num_layers=2, time_scale=1000.0
+    )
+    plain = VectorFieldAdaMLP(4, 0, hidden_features=16, num_layers=2)
+    # Break the zero initialisation, or the output does not depend on t at all.
+    with torch.no_grad():
+        for layer in scaled.layers[1:]:
+            layer.ada_ln[-1].weight.normal_(0, 0.1)
+        scaled.final_layer.weight.normal_(0, 0.1)
+    plain.load_state_dict(scaled.state_dict())  # same parameter set
+
+    t, x = torch.rand(8), torch.randn(8, 4)
+    with torch.no_grad():
+        torch.testing.assert_close(scaled(t, x), plain(1000.0 * t, x), rtol=0, atol=0)
+    assert plain.time_scale == 1.0
+
+
+@pytest.mark.parametrize("kind", FLOW_MATCHING_BACKENDS)
+def test_time_scale_reaches_the_adamlp_network(kind):
+    estimator = build_estimator(kind, architecture="AdaMLP", time_scale=1000.0)
+    assert estimator.velocity_model.time_scale == 1000.0

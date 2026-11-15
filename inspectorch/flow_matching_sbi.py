@@ -54,6 +54,7 @@ class FlowMatchingSBIBackend(nn.Module):
         context_dim: int = 0,
         architecture: str = "AdaMLP",
         block_style: str = "adaln_zero",
+        time_scale: float = 1.0,
         activation: nn.Module = nn.GELU(),
         dropout_probability: float = 0.0,
         use_batch_norm: bool = False,
@@ -84,6 +85,7 @@ class FlowMatchingSBIBackend(nn.Module):
                 time_embedding_dim=time_embedding_dim,
                 activation=type(activation),
                 block_style=block_style,
+                time_scale=time_scale,
             )
             print(f"  Using VectorFieldAdaMLP architecture ({block_style} blocks)")
 

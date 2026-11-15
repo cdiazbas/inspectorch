@@ -141,6 +141,7 @@ class FlowMatchingCFMBackend(nn.Module):
         num_layers: int = 2,
         architecture: str = "AdaMLP",
         block_style: str = "adaln_zero",
+        time_scale: float = 1.0,
         activation: nn.Module = nn.GELU(),
         dropout_probability: float = 0.0,
         use_batch_norm: bool = False,
@@ -169,6 +170,7 @@ class FlowMatchingCFMBackend(nn.Module):
                     num_layers=num_layers,
                     time_embedding_dim=kwargs.get("time_embedding_dim", 32),
                     block_style=block_style,
+                    time_scale=time_scale,
                 )
                 print(f"  Using VectorFieldAdaMLP architecture ({block_style} blocks)")
             else:

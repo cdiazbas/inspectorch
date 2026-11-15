@@ -230,6 +230,24 @@ class VectorFieldAdaMLP(nn.Module):
     AdaMLPBlock for the two available styles; pass
     ``block_style="legacy"`` to reproduce checkpoints trained before
     ``adaln_zero`` became the default.
+
+    ``time_scale`` multiplies t before the sinusoidal time embedding. That
+    embedding uses angular frequencies from 1 down to 1/1000 (the DiT
+    convention for t in [0, 1000]); with t in [0, 1] the largest phase is
+    1 rad and most channels barely change. ``time_scale=1000`` uses the
+    whole range. Measured on Hinode spectra (SBI backend, AdaMLP
+    adaln_zero, hidden 64, 40 epochs, held-out log-likelihood with the
+    exact divergence, 3 seeds):
+
+        depth   time_scale=1    time_scale=1000
+            2   92.94 +/- 0.13  93.36 +/- 0.08
+            5   93.29 +/- 0.31  93.89 +/- 0.21
+
+    It is better on every seed, but the finer time structure makes an
+    adaptive solver take about 5x more steps when scoring. The default
+    stays 1 so that existing checkpoints keep their meaning: the parameter
+    sets are identical, so a checkpoint loads silently under either value
+    and gives different results.
     """
 
     def __init__(
@@ -241,10 +259,12 @@ class VectorFieldAdaMLP(nn.Module):
         time_embedding_dim: int = 32,
         activation: type[nn.Module] = nn.GELU,
         block_style: str = "adaln_zero",
+        time_scale: float = 1.0,
     ):
         super().__init__()
         self.input_dim = input_dim
         self.block_style = block_style
+        self.time_scale = float(time_scale)
 
         # Global embedding network (Time + Context -> Embedding)
         self.cond_emb_dim = hidden_features
@@ -290,7 +310,8 @@ class VectorFieldAdaMLP(nn.Module):
             context: Context (batch, context_dim)
         """
         # Get conditioning embedding
-        cond_emb = self.global_mlp(t, x_emb=context)  # (batch, cond_emb_dim)
+        # (batch, cond_emb_dim)
+        cond_emb = self.global_mlp(t * self.time_scale, x_emb=context)
 
         # Forward pass
         h = x

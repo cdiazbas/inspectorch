@@ -64,6 +64,9 @@ class DensityEstimator(nn.Module):
         - block_style (str): For "AdaMLP", "adaln_zero" (default) or "legacy".
                              Pass "legacy" to load checkpoints trained before
                              "adaln_zero" became the default.
+        - time_scale (float): For "AdaMLP", factor on t before the time
+                             embedding (Default: 1). 1000 is more accurate
+                             and slower to score; keep 1 for older checkpoints.
         - time_embedding_dim (int): Dimension of time embeddings (Default: 32).
         """
         self.backend.create_flow(*args, **kwargs)
