@@ -200,7 +200,7 @@ for i in range(nplots):
     ax[i % 5].text(
         0.5,
         +0.1,
-        r"$\mathbf{{[x,y]}}$ = ({0}, {1})".format(idxs[i] // nx, idxs[i] % nx),
+        r"$\mathbf{{[x,y]}}$ = ({0}, {1})".format(idxs[i] % nx, idxs[i] // nx),
         fontsize=16,
         ha="center",
         va="top",
