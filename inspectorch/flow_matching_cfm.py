@@ -811,13 +811,22 @@ class FlowMatchingCFMBackend(nn.Module):
                             t_batch = t.expand(x_curr.shape[0])
                             dx = self.net(t_batch, x_curr)
 
-                            # Hutchinson's Trace Estimator
-                            epsilon = torch.randn_like(x_curr)
-                            v_eps = torch.sum(dx * epsilon)
-                            grad_v_eps = torch.autograd.grad(
-                                v_eps, x_curr, create_graph=False
-                            )[0]
-                            div = torch.sum(grad_v_eps * epsilon, dim=-1)
+                            if exact_divergence:
+                                div = torch.zeros(x_curr.shape[0], device=x_curr.device)
+                                for i in range(x_curr.shape[1]):
+                                    div = (
+                                        div
+                                        + torch.autograd.grad(
+                                            dx[:, i].sum(), x_curr, retain_graph=True
+                                        )[0][:, i]
+                                    )
+                            else:  # Hutchinson's trace estimator
+                                epsilon = torch.randn_like(x_curr)
+                                v_eps = torch.sum(dx * epsilon)
+                                grad_v_eps = torch.autograd.grad(
+                                    v_eps, x_curr, create_graph=False
+                                )[0]
+                                div = torch.sum(grad_v_eps * epsilon, dim=-1)
 
                         # Output: concat(dx, -div) to match SBI sign convention
                         return torch.cat([dx, (-div).view(-1, 1)], dim=-1)
