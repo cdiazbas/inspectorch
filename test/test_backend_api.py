@@ -158,6 +158,33 @@ def test_sample_is_in_the_data_coordinates(kind):
     assert abs(float(np.mean(samples)) - 100.0) < 1.0
 
 
+class _PlainDataset(torch.utils.data.Dataset):
+    """A map-style dataset with stats but no .patches."""
+
+    def __init__(self, n=200, d=4):
+        generator = torch.Generator().manual_seed(0)
+        self.x = torch.randn(n, d, generator=generator)
+        self.y_mean, self.y_std = self.x.mean(0), self.x.std(0)
+
+    def __len__(self):
+        return len(self.x)
+
+    def __getitem__(self, i):
+        return self.x[i]
+
+
+@pytest.mark.parametrize("kind", ALL_BACKENDS)
+def test_check_variables_accepts_a_dataset_without_patches(kind):
+    import matplotlib.pyplot as plt
+
+    estimator = build_estimator(kind)
+    loader = torch.utils.data.DataLoader(_PlainDataset(), batch_size=50)
+    try:
+        estimator.check_variables(loader, plot_variables=[0, 1], rel_size=0.5)
+    finally:
+        plt.close("all")
+
+
 @pytest.mark.parametrize("kind", ALL_BACKENDS)
 def test_print_summary_before_and_after_create(kind, capsys):
     require_backend(kind)

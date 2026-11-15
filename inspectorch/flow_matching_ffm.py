@@ -864,8 +864,8 @@ def check_latent_space(
     y_mean = train_loader.dataset.y_mean.to(device)
     y_std = train_loader.dataset.y_std.to(device)
 
-    dataset_size = len(train_loader.dataset)
-    total_samples = int(rel_size * dataset_size)
+    rows, total_samples = utils.diagnostic_rows(train_loader, rel_size)
+    dataset_size = len(rows)
 
     # Sample random indices
     random_indices = np.random.choice(
@@ -890,7 +890,7 @@ def check_latent_space(
         ):
             end_idx = min(i + batch_size, total_samples)
             batch_indices = random_indices[i:end_idx]
-            batch = train_loader.dataset.patches[batch_indices]
+            batch = rows[batch_indices]
             nan_mask = torch.isnan(batch).any(dim=1)
             batch = batch[~nan_mask]
             if batch.shape[0] == 0:

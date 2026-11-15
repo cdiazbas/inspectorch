@@ -727,8 +727,8 @@ def check_variables(
     y_std = train_loader.dataset.y_std.to(device)
 
     # Calculate total samples needed
-    dataset_size = len(train_loader.dataset)
-    total_samples_needed = int(rel_size * dataset_size)
+    rows, total_samples_needed = iu.diagnostic_rows(train_loader, rel_size)
+    dataset_size = len(rows)
 
     # Step 1: Randomly sample indices
     random_indices = np.random.choice(
@@ -751,7 +751,7 @@ def check_variables(
             # Step 3: Collect samples for this batch - VECTORIZED VERSION
 
             # Get all samples at once using advanced indexing
-            batch_tensor = train_loader.dataset.patches[batch_indices]
+            batch_tensor = rows[batch_indices]
 
             # Vectorized NaN check - check which samples have NaNs
             nan_mask = torch.isnan(batch_tensor).any(dim=1)

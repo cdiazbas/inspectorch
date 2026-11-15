@@ -455,3 +455,34 @@ def fixed_time_grid(n_steps, device="cpu"):
     if n_steps < 1:
         raise ValueError(f"A fixed-step solver needs at least one step, got {n_steps}")
     return torch.linspace(1, 0, n_steps + 1, device=device)
+
+
+# =============================================================================
+def diagnostic_rows(train_loader, rel_size):
+    """
+    Rows for a latent-space diagnostic, and how many of them to use.
+
+    Uses dataset.patches when the dataset has it (GeneralizedPatchedDataset)
+    and draws rel_size of it. Any other dataset is read through the loader
+    until rel_size of len(dataset) rows are collected (100 000 if it has no
+    length).
+
+    Returns (rows, n_needed).
+    """
+    dataset = train_loader.dataset
+    if hasattr(dataset, "patches"):
+        return dataset.patches, int(rel_size * len(dataset.patches))
+    try:
+        n_needed = max(1, int(rel_size * len(dataset)))
+    except TypeError:
+        n_needed = 100_000
+    rows, got = [], 0
+    for batch in train_loader:
+        batch = batch[0] if isinstance(batch, (list, tuple)) else batch
+        batch = torch.as_tensor(batch)
+        rows.append(batch)
+        got += len(batch)
+        if got >= n_needed:
+            break
+    rows = torch.cat(rows)[:n_needed]
+    return rows, len(rows)
