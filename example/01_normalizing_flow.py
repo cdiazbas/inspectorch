@@ -106,7 +106,9 @@ args.num_epochs = 15
 args.device = "cuda:0"
 args.output_model = "models/nflow_model_hinode_mini.pth"
 args.save_model = True
-args.load_existing = True
+# To reload the saved model instead of training, set num_epochs = 0 and
+# load_existing = True; with num_epochs > 0 load_existing has no effect.
+args.load_existing = False
 
 # Save training arguments for reproducibility
 utils.save_json(args, "models/nflow_args_hinode_mini.json")

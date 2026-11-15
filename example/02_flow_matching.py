@@ -115,7 +115,9 @@ args.num_epochs = 15
 args.device = "cuda:0"  # Supports multi-GPU: "cuda:0,1,2"
 args.output_model = "models/mflow_model_hinode_mini.pth"
 args.save_model = True
-args.load_existing = True
+# To reload the saved model instead of training, set num_epochs = 0 and
+# load_existing = True; with num_epochs > 0 load_existing has no effect.
+args.load_existing = False
 args.extra_noise = 0.0  # Additional noise for regularization (0.0 = no extra noise)
 
 # Save training arguments for reproducibility
