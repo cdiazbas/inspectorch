@@ -25,6 +25,9 @@ def apply_dim_reduction(data, dim_reduction):
     Raises:
         ValueError: If an unknown dimensionality reduction method is specified.
     """
+    if isinstance(dim_reduction, PCAReducer):
+        # A reducer fitted on another dataset: project onto its basis.
+        return dim_reduction.transform(data), dim_reduction
     method = dim_reduction.get("method", "pca")
     if method == "pca":
         n_components = dim_reduction.get("n_components", DEFAULT_N_COMPONENTS)
