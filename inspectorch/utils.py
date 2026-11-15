@@ -280,8 +280,8 @@ def configure_device(model_wrapper, device):
         num_gpus_available = torch.cuda.device_count()
 
         if device_clean in ["cuda", "cuda:"]:
-            # Use all available GPUs
-            gpu_ids = list(range(num_gpus_available))
+            # One GPU; DataParallel only when several are listed ('cuda:0,1').
+            gpu_ids = [0]
             primary_gpu = 0
 
         elif "," in device_clean:

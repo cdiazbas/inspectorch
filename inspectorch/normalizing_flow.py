@@ -442,7 +442,7 @@ def train_flow(
     Trains a normalizing flow model with flexible device selection.
 
     - 'cpu': Uses CPU.
-    - 'cuda': Uses all available GPUs with DataParallel (primary cuda:0).
+    - 'cuda': Uses one GPU, cuda:0.
     - 'cuda:X': Uses only GPU X (e.g., 'cuda:0').
     - 'cuda:X,Y,Z': Uses specified GPUs X,Y,Z with DataParallel (primary X).
     If num_epochs=0 and load_existing=True, loads the existing model from output_model.
