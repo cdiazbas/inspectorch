@@ -341,11 +341,13 @@ class VelocityMLPLegacy(nn.Module):
 
         self.net = nn.Sequential(*layers)
 
-    def forward(self, t, x):
+    def forward(self, t, x, context=None):
         """
         Args:
             t: Time tensor of shape (batch_size,) or (batch_size, 1) or scalar
             x: Data tensor of shape (batch_size, input_dim)
+            context: Accepted for a common signature with VectorFieldAdaMLP;
+                this network is unconditional and ignores it.
         Returns:
             Velocity vector of shape (batch_size, input_dim)
         """
@@ -402,11 +404,13 @@ class VelocityResNet(nn.Module):
         # Output projection
         self.output_proj = nn.Linear(hidden_dim, input_dim)
 
-    def forward(self, t, x):
+    def forward(self, t, x, context=None):
         """
         Args:
             t: Time tensor of shape (batch_size,) or (batch_size, 1) or scalar
             x: Data tensor of shape (batch_size, input_dim)
+            context: Accepted for a common signature with VectorFieldAdaMLP;
+                this network is unconditional and ignores it.
         Returns:
             Velocity vector of shape (batch_size, input_dim)
         """
@@ -502,11 +506,13 @@ class VelocityResNetFlow(nn.Module):
             use_batch_norm=use_batch_norm,
         )
 
-    def forward(self, t, x):
+    def forward(self, t, x, context=None):
         """
         Args:
             t: Time tensor of shape (batch_size,) or (batch_size, 1) or scalar
             x: Data tensor of shape (batch_size, input_dim)
+            context: Accepted for a common signature with VectorFieldAdaMLP;
+                this network is unconditional and ignores it.
         Returns:
             Velocity vector of shape (batch_size, input_dim)
         """
@@ -598,7 +604,7 @@ class FourierMLP(nn.Module):
         )
         self.last = nn.Linear(num_neurons, dim_out)
 
-    def forward(self, t, x):
+    def forward(self, t, x, context=None):
         # Embed time and concatenate
         if not isinstance(t, torch.Tensor):
             t = torch.tensor(t, device=x.device, dtype=x.dtype)

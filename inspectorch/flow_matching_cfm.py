@@ -186,7 +186,7 @@ class FlowMatchingCFMBackend(nn.Module):
                 num_layers=num_layers,
                 time_embedding_dim=kwargs.get("time_embedding_dim", 32),
             )
-            self.velocity_model = CFMMLPWrapper(legacy_mlp)
+            self.velocity_model = legacy_mlp
             print("  Using Legacy MLP architecture")
 
         elif architecture == "ResNet":
@@ -196,7 +196,7 @@ class FlowMatchingCFMBackend(nn.Module):
                 num_blocks=num_layers,
                 time_embedding_dim=kwargs.get("time_embedding_dim", 32),
             )
-            self.velocity_model = CFMMLPWrapper(resnet)
+            self.velocity_model = resnet
             print("  Using VelocityResNet architecture")
 
         elif architecture == "ResNetFlow":
@@ -209,7 +209,7 @@ class FlowMatchingCFMBackend(nn.Module):
                 dropout_probability=dropout_probability,
                 use_batch_norm=use_batch_norm,
             )
-            self.velocity_model = CFMMLPWrapper(resnetflow)
+            self.velocity_model = resnetflow
             print("  Using nflows ResidualNet architecture")
 
         elif architecture == "FourierMLP":
@@ -226,7 +226,7 @@ class FlowMatchingCFMBackend(nn.Module):
                 time_embedding_dim=time_dim,
                 **fourier_kwargs,
             )
-            self.velocity_model = CFMMLPWrapper(fourier)
+            self.velocity_model = fourier
             print("  Using FourierMLP architecture")
 
         else:
