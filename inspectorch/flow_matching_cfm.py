@@ -603,6 +603,7 @@ class FlowMatchingCFMBackend(nn.Module):
         atol: float = 1e-5,
         rtol: float = 1e-5,
         exact_divergence: bool = False,
+        hutchinson_seed: int = 0,
         steps: int = 100,
         dataset_normalization: bool = True,
         **kwargs,
@@ -661,7 +662,7 @@ class FlowMatchingCFMBackend(nn.Module):
                     v = self.net(t_batch, x)
 
                     if not exact_divergence:  # Hutchinson
-                        epsilon = torch.randn_like(x)
+                        epsilon = torch.randn(x.shape, generator=probe_gen).to(x)
                         v_eps = torch.sum(v * epsilon)
                         grad_v_eps = torch.autograd.grad(v_eps, x, create_graph=False)[
                             0
@@ -679,6 +680,8 @@ class FlowMatchingCFMBackend(nn.Module):
 
         print(f"Computing log-probs on {device} using {solver_method}...")
 
+        # Seeded, so a Hutchinson estimate is the same on every call.
+        probe_gen = torch.Generator().manual_seed(hutchinson_seed)
         with torch.no_grad():
             for batch in tqdm(loader, desc="Computing log prob"):
                 x_batch = batch[0].to(device)
@@ -734,6 +737,7 @@ class FlowMatchingCFMBackend(nn.Module):
         atol: float = 1e-5,
         rtol: float = 1e-5,
         exact_divergence: bool = False,
+        hutchinson_seed: int = 0,
         steps: int = 100,
         dataset_normalization: bool = True,
         **kwargs,
@@ -769,6 +773,8 @@ class FlowMatchingCFMBackend(nn.Module):
             n_steps = steps if step_size is None else int(1.0 / step_size)
             t_span = utils.fixed_time_grid(n_steps, device)
 
+        # Seeded, so a Hutchinson estimate is the same on every call.
+        probe_gen = torch.Generator().manual_seed(hutchinson_seed)
         with torch.no_grad():
             for batch in tqdm(loader, desc="Computing log prob"):
                 x = batch[0].to(device)
@@ -811,7 +817,9 @@ class FlowMatchingCFMBackend(nn.Module):
                                         )[0][:, i]
                                     )
                             else:  # Hutchinson's trace estimator
-                                epsilon = torch.randn_like(x_curr)
+                                epsilon = torch.randn(
+                                    x_curr.shape, generator=probe_gen
+                                ).to(x_curr)
                                 v_eps = torch.sum(dx * epsilon)
                                 grad_v_eps = torch.autograd.grad(
                                     v_eps, x_curr, create_graph=False

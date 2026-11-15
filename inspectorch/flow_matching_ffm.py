@@ -463,6 +463,7 @@ class FlowMatchingBackend(nn.Module):
         atol: float = 1e-5,
         rtol: float = 1e-5,
         exact_divergence: bool = False,
+        hutchinson_seed: int = 0,
         step_size: float = 0.01,  # Default to 0.01 (100 steps)
         steps: Optional[int] = None,  # Accept explicit steps count
     ) -> np.ndarray:
@@ -541,7 +542,7 @@ class FlowMatchingBackend(nn.Module):
                     v = self.net(t_expand, x)
 
                     if not exact_divergence:  # Hutchinson
-                        epsilon = torch.randn_like(x)
+                        epsilon = torch.randn(x.shape, generator=probe_gen).to(x)
                         v_eps = torch.sum(v * epsilon)
                         grad_v_eps = torch.autograd.grad(v_eps, x, create_graph=False)[
                             0
@@ -559,6 +560,8 @@ class FlowMatchingBackend(nn.Module):
 
         print(f"Computing log-probs on {device} using {solver_method}...")
 
+        # Seeded, so a Hutchinson estimate is the same on every call.
+        probe_gen = torch.Generator().manual_seed(hutchinson_seed)
         with torch.no_grad():
             for batch in tqdm(loader, desc="Computing log prob"):
                 x_batch = batch[0].to(device)
