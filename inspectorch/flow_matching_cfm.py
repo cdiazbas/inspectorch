@@ -281,6 +281,11 @@ class FlowMatchingCFMBackend(nn.Module):
                 else:
                     x1 = batch
 
+                # Rows with NaN (masked pixels) are left out, as in the
+                # normalizing-flow and FFM loops.
+                x1 = x1[~torch.isnan(x1).any(dim=1)]
+                if x1.shape[0] == 0:
+                    continue
                 x1 = x1.to(device)
 
                 # Normalize (same as other backends)

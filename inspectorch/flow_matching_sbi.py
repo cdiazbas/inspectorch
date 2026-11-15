@@ -238,6 +238,9 @@ class FlowMatchingSBIBackend(nn.Module):
                 if not isinstance(batch, torch.Tensor):
                     batch = torch.from_numpy(batch).float()
 
+                batch = batch[~torch.isnan(batch).any(dim=1)]
+                if batch.shape[0] == 0:
+                    continue
                 batch = batch.to(device)
 
                 # Normalize
