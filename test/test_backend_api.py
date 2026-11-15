@@ -37,6 +37,25 @@ def test_every_architecture_builds_on_every_flow_matching_backend(kind, architec
     assert estimator.velocity_model is not None
 
 
+@pytest.mark.parametrize("kind", FLOW_MATCHING_BACKENDS)
+@pytest.mark.parametrize("architecture", ARCHITECTURES)
+def test_every_architecture_trains_scores_and_samples(
+    kind, architecture, toy_dataset, toy_loader
+):
+    """Building is not running: train, log_prob and sample each cell once."""
+    estimator = build_estimator(kind, architecture=architecture)
+    estimator.train_flow(toy_loader, learning_rate=1e-3, num_epochs=1, device="cpu")
+
+    log_prob = estimator.log_prob(
+        toy_dataset, device="cpu", solver_method="euler", steps=10
+    )
+    samples = estimator.sample(4, device="cpu")
+    samples = samples.detach().cpu().numpy() if torch.is_tensor(samples) else samples
+
+    assert log_prob.shape == (len(toy_dataset),) and np.isfinite(log_prob).all()
+    assert samples.shape == (4, 4) and np.isfinite(samples).all()
+
+
 def test_unknown_backend_raises():
     from inspectorch import DensityEstimator
 
