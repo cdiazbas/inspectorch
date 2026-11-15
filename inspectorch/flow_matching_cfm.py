@@ -363,6 +363,7 @@ class FlowMatchingCFMBackend(nn.Module):
         from tqdm import tqdm
 
         self.velocity_model.eval()
+        _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
         # Get stats if available
@@ -617,6 +618,7 @@ class FlowMatchingCFMBackend(nn.Module):
         from tqdm import tqdm
 
         self.velocity_model.eval()
+        _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
         # Handle inputs. `norm_std` is the std the model's input was
@@ -748,6 +750,7 @@ class FlowMatchingCFMBackend(nn.Module):
         This was the initial implementation before copying SBI.
         """
         self.velocity_model.eval()
+        _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
         # Input handling; see _log_prob_naive for `norm_std`.
@@ -864,6 +867,7 @@ class FlowMatchingCFMBackend(nn.Module):
         Generate samples by integrating from t=0 (Noise) to t=1 (Data).
         """
         self.velocity_model.eval()
+        _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
         # 1. Sample Noise x0
