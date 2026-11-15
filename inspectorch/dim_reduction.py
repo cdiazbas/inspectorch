@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from sklearn.decomposition import PCA
 
@@ -79,7 +80,9 @@ class PCAReducer:
     def fit(self, X):
         if isinstance(X, torch.Tensor):
             X = X.detach().cpu().numpy()
-        self.model.fit(X)
+        # Rows with NaN (masked pixels) are left out of the fit, as they
+        # are left out of training.
+        self.model.fit(X[np.isfinite(X).all(axis=1)])
         self.fitted = True
 
     def transform(self, X):
@@ -89,7 +92,12 @@ class PCAReducer:
             )
         if isinstance(X, torch.Tensor):
             X = X.detach().cpu().numpy()
-        return torch.tensor(self.model.transform(X), dtype=torch.float32)
+        # Rows with NaN stay NaN, so the output keeps one row per input row.
+        ok = np.isfinite(X).all(axis=1)
+        out = np.full((len(X), self.model.n_components_), np.nan, dtype=np.float32)
+        if ok.any():
+            out[ok] = self.model.transform(X[ok])
+        return torch.tensor(out, dtype=torch.float32)
 
     def fit_transform(self, X):
         if isinstance(X, torch.Tensor):
