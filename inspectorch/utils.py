@@ -420,6 +420,10 @@ def log_prob_inputs(inputs, dataset_normalization, y_mean, y_std):
                 stacklevel=3,
             )
             return inputs.patches, None, None, None
+        if all(hasattr(inputs, a) for a in ("patches", "y_mean", "y_std")):
+            # Standardise batch by batch instead of building a normalised
+            # copy of the whole dataset.
+            return inputs.patches, inputs.y_mean, inputs.y_std, inputs.y_std
         return (
             inputs.normalized_patches(),
             None,

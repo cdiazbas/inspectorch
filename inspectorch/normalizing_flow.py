@@ -190,25 +190,21 @@ class NormalizingFlowBackend(nn.Module):
         Computes the log probability of the input data using the flow model.
 
         Args:
-            inputs: The input data to evaluate. If `dataset_normalization` is True,
-                it is expected to have a `normalized_patches()` method that returns
-                the normalized data.
+            inputs: The data to evaluate: a dataset such as
+                GeneralizedPatchedDataset (standardised with its own stats),
+                or a tensor / ndarray of rows (standardised with the
+                training stats). See utils.log_prob_inputs.
             dataset_normalization (bool, optional): If True, applies dataset normalization
                 to the inputs before computing log probability. Defaults to True.
 
         Returns:
             numpy.ndarray: The log probabilities of the inputs as a NumPy array.
         """
-        # Capture the std before `inputs` is rebound: a density fitted on
-        # standardised data needs -sum(log std) to become a density in the
-        # data coordinates. See utils.normalization_log_det.
-        norm_std = getattr(inputs, "y_std", None) if dataset_normalization else None
-        if dataset_normalization:
-            inputs = inputs.normalized_patches()
-
-        else:
-            inputs = inputs.patches
-
+        # A density fitted on standardised data needs -sum(log std) to become
+        # a density in the data coordinates. See utils.normalization_log_det.
+        inputs, mean, std, norm_std = iu.log_prob_inputs(
+            inputs, dataset_normalization, self.y_mean, self.y_std
+        )
         log_det_norm = iu.normalization_log_det(norm_std, inputs.shape[1])
 
         results = []
@@ -220,15 +216,19 @@ class NormalizingFlowBackend(nn.Module):
 
         from tqdm import tqdm
 
+        model_device = next(self.flow_model.parameters()).device
+        if mean is not None:
+            mean, std = mean.to(model_device), std.to(model_device)
+
         # No autograd: otherwise each batch keeps its graph alive for a
         # backward pass that never comes.
         with torch.inference_mode():
             for i in tqdm(
                 range(0, inputs.shape[0], batch_size), desc="Computing log prob"
             ):
-                batch = inputs[i : i + batch_size].to(
-                    next(self.flow_model.parameters()).device
-                )
+                batch = inputs[i : i + batch_size].to(model_device)
+                if mean is not None:
+                    batch = (batch - mean) / std
                 results.append(self.flow_model.log_prob(batch).cpu().numpy())
 
         # Move model back to CPU if needed
