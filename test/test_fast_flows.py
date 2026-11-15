@@ -195,3 +195,33 @@ def test_regflow_trains_on_teacher_pairs():
     student.y_mean, student.y_std = teacher.y_mean, teacher.y_std
     student.train_flow(pairs=pairs, num_epochs=1, batch_size=64, device="cpu")
     assert np.isfinite(student.log_prob(ds.patches)).all()
+
+
+class _Still(nn.Module):
+    """u = 0: the map is the identity, so log p is the standard normal of the standardised data."""
+
+    def __init__(self, d=D):
+        super().__init__()
+        self.out = nn.Sequential(nn.Linear(d, d))  # read by FastFlowEstimator._dim only
+
+    def forward(self, x, a, b):
+        return torch.zeros_like(x)
+
+
+def test_estimator_log_prob_and_sample_are_in_the_data_coordinates():
+    """Pins the estimator layer: standardisation, -sum(log std), de-standardised samples."""
+    from scipy.stats import norm
+
+    ds = _ToyDataset()
+    est = ff.FastFlowEstimator("meanflow")
+    est.model = _Still()
+    est.y_mean, est.y_std = ds.y_mean, ds.y_std
+    lp = est.log_prob(ds.patches, steps=2)
+    m, s = ds.y_mean.numpy(), ds.y_std.numpy()
+    exact = norm.logpdf(ds.patches.numpy(), m, s).sum(-1)
+    np.testing.assert_allclose(lp, exact, rtol=0, atol=1e-4)
+
+    torch.manual_seed(0)
+    x = est.sample(20000, steps=2).numpy()
+    np.testing.assert_allclose(x.mean(0), m, atol=0.05 * s.max())
+    np.testing.assert_allclose(x.std(0), s, rtol=0.03)
