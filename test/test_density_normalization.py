@@ -149,8 +149,16 @@ def test_every_backend_returns_a_data_space_density(kind):
 @pytest.mark.parametrize("kind", ALL_BACKENDS)
 def test_log_prob_is_deterministic_for_a_fixed_model(kind):
     """Two identical calls must agree, so the tests above are meaningful."""
-    first, second = _integrate(kind), _integrate(kind)
-    assert first == pytest.approx(second, rel=1e-6)
+    # 2-D: the 1-D normalizing flow builds a much slower UMNN transform.
+    estimator = randomize(build_estimator(kind, input_size=2))  # seeds once
+    points = torch.randn(64, 2, generator=torch.Generator().manual_seed(0))
+    grid = GridDataset(points, torch.zeros(2), torch.ones(2))
+    kwargs = {} if kind == "normalizing_flow" else dict(solver_method="euler", steps=20)
+    torch.manual_seed(1)
+    first = estimator.log_prob(grid, device="cpu", **kwargs)
+    torch.manual_seed(2)  # a different global RNG state must not matter
+    second = estimator.log_prob(grid, device="cpu", **kwargs)
+    assert np.array_equal(first, second)
 
 
 @pytest.mark.parametrize("kind", FLOW_MATCHING_BACKENDS)
