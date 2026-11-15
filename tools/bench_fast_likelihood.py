@@ -10,6 +10,8 @@ Methods (any subset, comma-separated):
     f2d2        fast_flows: meanflow + average-divergence head
     regflow     fast_flows: NF trained by regression on minibatch-OT pairs
     regflow_t   fast_flows: NF trained by regression on pairs from a falcon teacher
+                (regflow and regflow_t sample well but their densities are not
+                usable for ranking; they are left out of the default set)
 
 For every method it reports training time, held-out NLL, evaluation speed
 per number of map steps, rank agreement with a reference method (top-k
@@ -18,7 +20,7 @@ go to a JSON file with the run conditions.
 
 Example (server):
     python tools/bench_fast_likelihood.py --data example/hinode_data.npz \\
-        --divide 186 --methods nf,fm,meanflow,falcon,f2d2,regflow,regflow_t \\
+        --divide 186 --methods nf,fm,meanflow,falcon,f2d2 \\
         --reference fm --epochs 50 --device cuda:0 --out bench.json
 """
 
@@ -125,7 +127,7 @@ def main():
         default=1.0,
         help="divide the data by this (example: 186)",
     )
-    p.add_argument("--methods", default="nf,fm,meanflow,falcon,f2d2,regflow,regflow_t")
+    p.add_argument("--methods", default="nf,fm,meanflow,falcon,f2d2")
     p.add_argument(
         "--reference",
         default="fm",

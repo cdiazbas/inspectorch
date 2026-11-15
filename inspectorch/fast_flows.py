@@ -9,7 +9,12 @@ Few-step density estimators, for comparison with the existing backends:
               log p needs no Jacobian (Ai et al., arXiv 2512.02636)
     regflow   the normalizing flow of this package trained by regression
               onto noise/data pairs instead of maximum likelihood
-              (Rehman et al., arXiv 2506.01158)
+              (Rehman et al., arXiv 2506.01158). A sampler, not a density
+              estimator here: the regression fits noise -> data on the pairs
+              and leaves the data -> noise map, which the likelihood uses,
+              unconstrained. On the Hinode example its held-out NLL/dim is
+              -1.75 (-0.45 with teacher pairs) against -3.29 for the same
+              flow trained by maximum likelihood; do not rank with it.
 
 Convention throughout, as in the SBI backend: t = 0 is noise N(0, I),
 t = 1 is (standardised) data, x_t = (1 - t) x0 + t x1, conditional
