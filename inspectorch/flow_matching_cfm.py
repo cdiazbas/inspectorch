@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from typing import Union
+from typing import Optional, Union
 from tqdm import tqdm
 import math
 
@@ -567,7 +567,7 @@ class FlowMatchingCFMBackend(nn.Module):
         self,
         inputs: Union[torch.Tensor, np.ndarray, object],
         solver_method: str = "dopri5",
-        step_size: float = 0.01,  # 100 fixed steps; 0.1 (=10) is too coarse
+        step_size: Optional[float] = None,
         device: str = "cpu",
         batch_size: int = 100,
         use_naive: bool = False,  # False: API (CFM-style), True: SBI-style
@@ -578,6 +578,9 @@ class FlowMatchingCFMBackend(nn.Module):
         estimation.
 
         Args:
+            step_size: step of a fixed-step solver (euler, rk4, midpoint);
+                      when None, `steps` (default 100) sets it. 10 steps is
+                      too coarse for accurate log-densities.
             use_naive: If True, use the naive implementation (like SBI).
                       If False, use the torchcfm API-based implementation.
         """
@@ -594,7 +597,7 @@ class FlowMatchingCFMBackend(nn.Module):
         self,
         inputs: Union[torch.Tensor, np.ndarray, object],
         solver_method: str = "euler",
-        step_size: float = 0.01,
+        step_size: Optional[float] = None,
         device: str = "cpu",
         batch_size: int = 1000,
         atol: float = 1e-5,
@@ -637,18 +640,8 @@ class FlowMatchingCFMBackend(nn.Module):
         # Integration times: 1.0 -> 0.0 (Data -> Noise)
         t_span = torch.tensor([1.0, 0.0], device=device)
         if solver_method in ["euler", "rk4", "midpoint"]:
-            # Prioritize step_size if it was passed explicitly (default 0.1 in sig)
-            # or in kwargs. Note: arguments in sig are local vars.
-            # steps defaults to 100. step_size defaults to 0.1.
-            # If default steps(100) and step_size(0.1) mismatch -> 100 vs 10.
-            # Our test sends step_size=0.1.
-
-            # Logic: If 'steps' was passed as kwarg (non-default), use it.
-            # Else if 'step_size' was passed (or default), use it?
-            # Safest: compute steps from step_size
-
-            computed_steps = int(1.0 / step_size)
-            t_span = utils.fixed_time_grid(computed_steps, device)
+            n_steps = steps if step_size is None else int(1.0 / step_size)
+            t_span = utils.fixed_time_grid(n_steps, device)
 
         # ODE function matching SBI exactly
         class ODEFuncLogProb(nn.Module):
@@ -725,7 +718,7 @@ class FlowMatchingCFMBackend(nn.Module):
         self,
         inputs: Union[torch.Tensor, np.ndarray, object],
         solver_method: str = "euler",
-        step_size: float = 0.01,
+        step_size: Optional[float] = None,
         device: str = "cpu",
         batch_size: int = 1000,
         atol: float = 1e-5,
@@ -763,30 +756,8 @@ class FlowMatchingCFMBackend(nn.Module):
         t_span = torch.tensor([1.0, 0.0]).to(device)
         # Handle fixed step solvers (must match naive implementation!)
         if solver_method in ["euler", "rk4", "midpoint"]:
-            # Prioritize step_size logic akin to _log_prob_naive
-            kwargs.get("step_size", step_size)  # Check kwargs or argument
-            # Note: argument 'step_size' defaults to 0.1 but 'steps' defaults to 100.
-            # If step_size is default(0.1) and steps is default(100), we have conflict.
-            # But test passes step_size=0.1.
-
-            # Simple priority:
-            if "step_size" in kwargs:  # Explicit kwarg
-                computed_steps = int(1.0 / kwargs["step_size"])
-                t_span = utils.fixed_time_grid(computed_steps, device)
-            elif (
-                step_size != 0.1
-            ):  # Explicit arg? (hard to tell if default, assume used if changed)
-                computed_steps = int(1.0 / step_size)
-                t_span = utils.fixed_time_grid(computed_steps, device)
-            else:
-                # Default behavior or steps arg
-                # But wait, we want to match flow_matching.py behavior which is 10 steps for 0.1
-                # If step_size is 0.1 (default) -> 10 steps.
-                # If steps is 100 (default) -> 100 steps.
-
-                # Let's standardize: Calculate steps from step_size ALWAYS
-                computed_steps = int(1.0 / step_size)
-                t_span = utils.fixed_time_grid(computed_steps, device)
+            n_steps = steps if step_size is None else int(1.0 / step_size)
+            t_span = utils.fixed_time_grid(n_steps, device)
 
         with torch.no_grad():
             for batch in tqdm(loader, desc="Computing log prob"):
