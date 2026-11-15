@@ -160,9 +160,15 @@ def divergence(u_fn, x, t, exact=False, generator=None):
     return (e * jvp(f, (x,), (e,))[1]).sum(-1)
 
 
-def step_logdet(u_fn, x, a, b, chunk=2048):
-    """log|det dX/dx| of one map step, exact (reverse-mode Jacobian per row)."""
-    out = []
+def step_logdet(u_fn, x, a, b, chunk=2048, return_sign=False):
+    """
+    log|det dX/dx| of one map step, exact (reverse-mode Jacobian per row).
+
+    With return_sign, also the sign of det. A step that is close to the
+    identity has det > 0; a row with det <= 0 sits where the learned map
+    folds, so the change of variables does not hold there.
+    """
+    out, signs = [], []
     for s in range(0, x.shape[0], chunk):
         xs = x[s : s + chunk]
         a1 = a.reshape(1, 1).to(xs)
@@ -172,7 +178,11 @@ def step_logdet(u_fn, x, a, b, chunk=2048):
             return flow_step(u_fn, xi[None], a1, b1)[0]
 
         jac = vmap(jacrev(single))(xs)
-        out.append(torch.linalg.slogdet(jac)[1])
+        sign, logabs = torch.linalg.slogdet(jac)
+        out.append(logabs)
+        signs.append(sign)
+    if return_sign:
+        return torch.cat(out), torch.cat(signs)
     return torch.cat(out)
 
 
@@ -180,21 +190,29 @@ def log_normal(z):
     return -0.5 * (z.shape[-1] * math.log(2 * math.pi) + (z**2).sum(-1))
 
 
-def map_log_prob(u_fn, x, steps=1, g_fn=None):
+def map_log_prob(u_fn, x, steps=1, g_fn=None, return_folded=False):
     """
     log p(x) for data-side x (t = 1) through `steps` equal map steps to t = 0.
     With g_fn (average divergence), the f2d2 sum replaces the Jacobian.
+    With return_folded (Jacobian route only), also a mask of the rows for
+    which some step has det <= 0: there the map is not invertible and the
+    value is not a density.
     """
     grid = torch.linspace(1.0, 0.0, steps + 1, device=x.device, dtype=x.dtype)
     total = torch.zeros(x.shape[0], device=x.device, dtype=x.dtype)
+    folded = torch.zeros(x.shape[0], dtype=torch.bool, device=x.device)
     for a, b in zip(grid[:-1], grid[1:]):
         a_ = a.expand(x.shape[0], 1)
         b_ = b.expand(x.shape[0], 1)
         if g_fn is None:
-            total = total + step_logdet(u_fn, x, a, b)
+            logabs, sign = step_logdet(u_fn, x, a, b, return_sign=True)
+            total = total + logabs
+            folded |= sign <= 0
         else:
             total = total + (b - a) * g_fn(x, a_, b_)
         x = flow_step(u_fn, x, a_, b_)
+    if return_folded:
+        return log_normal(x) + total, folded
     return log_normal(x) + total
 
 
@@ -445,7 +463,7 @@ class FastFlowEstimator(nn.Module):
         self.model.to(device).eval()
         if mean is not None:
             mean, std = mean.to(device), std.to(device)
-        out = []
+        out, n_folded, n_rows = [], 0, 0
         for s in range(0, data.shape[0], batch_size):
             x = torch.as_tensor(data[s : s + batch_size], dtype=torch.float32).to(
                 device
@@ -466,9 +484,23 @@ class FastFlowEstimator(nn.Module):
                             g_fn=lambda x_, a_, b_: self.model.both(x_, a_, b_)[1],
                         )
                     else:
-                        lp[ok] = map_log_prob(self.model, x[ok], steps)
+                        lp[ok], folded = map_log_prob(
+                            self.model, x[ok], steps, return_folded=True
+                        )
+                        n_folded += int(folded.sum())
+                        n_rows += int(ok.sum())
             out.append(lp.cpu().numpy() + log_det_norm)
         self.model.to("cpu")
+        if n_folded:
+            import warnings
+
+            warnings.warn(
+                f"{n_folded} of {n_rows} rows ({100 * n_folded / n_rows:.2f} %) pass "
+                f"through a fold of the learned map (det <= 0 in some step): their "
+                f"log p is not a density. More steps or the falcon cycle term reduce it.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         return np.concatenate(out)
 
     # ------------------------------------------------------------------
