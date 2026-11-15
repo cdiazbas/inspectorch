@@ -685,6 +685,15 @@ class FlowMatchingCFMBackend(nn.Module):
                 if mean is not None:
                     x_batch = (x_batch - mean) / std
 
+                # A row with NaN would stall an adaptive solver for the whole
+                # batch; such rows are set aside and come back as NaN.
+                ok = torch.isfinite(x_batch).all(dim=1)
+                out = torch.full((x_batch.shape[0],), float("nan"), device=device)
+                if not ok.any():
+                    log_probs.append(out.cpu().numpy())
+                    continue
+                x_batch = x_batch[ok]
+
                 batch_n = x_batch.shape[0]
                 zeros = torch.zeros(batch_n, device=device)
 
@@ -710,7 +719,8 @@ class FlowMatchingCFMBackend(nn.Module):
 
                 batch_log_prob = log_p_z - delta_log_p + log_det_norm
 
-                log_probs.append(batch_log_prob.cpu().numpy())
+                out[ok] = batch_log_prob.to(out.dtype)
+                log_probs.append(out.cpu().numpy())
 
         return np.concatenate(log_probs)
 
@@ -764,6 +774,15 @@ class FlowMatchingCFMBackend(nn.Module):
                 x = batch[0].to(device)
                 if mean is not None:
                     x = (x - mean) / std
+
+                # A row with NaN would stall an adaptive solver for the whole
+                # batch; such rows are set aside and come back as NaN.
+                ok = torch.isfinite(x).all(dim=1)
+                out = torch.full((x.shape[0],), float("nan"), device=device)
+                if not ok.any():
+                    all_log_probs.append(out.cpu().numpy())
+                    continue
+                x = x[ok]
 
                 # Combined state approach (original CFM implementation)
                 class ODEFunc(nn.Module):
@@ -820,7 +839,8 @@ class FlowMatchingCFMBackend(nn.Module):
                 log_p_z0 = -0.5 * (math.log(2 * math.pi) + z0.pow(2)).sum(dim=-1)
 
                 log_prob = log_p_z0 - delta_logp + log_det_norm
-                all_log_probs.append(log_prob.cpu().numpy())
+                out[ok] = log_prob.to(out.dtype)
+                all_log_probs.append(out.cpu().numpy())
 
         return np.concatenate(all_log_probs)
 

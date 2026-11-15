@@ -565,6 +565,15 @@ class FlowMatchingBackend(nn.Module):
                 if mean is not None:
                     x_batch = (x_batch - mean) / std
 
+                # A row with NaN would stall an adaptive solver for the whole
+                # batch; such rows are set aside and come back as NaN.
+                ok = torch.isfinite(x_batch).all(dim=1)
+                out = torch.full((x_batch.shape[0],), float("nan"), device=device)
+                if not ok.any():
+                    log_probs.append(out.cpu().numpy())
+                    continue
+                x_batch = x_batch[ok]
+
                 batch_n = x_batch.shape[0]
                 zeros = torch.zeros(batch_n, device=device)
 
@@ -602,7 +611,8 @@ class FlowMatchingBackend(nn.Module):
                 # Let's trust the SBI implementation which was verified.)
 
                 batch_log_prob = log_p_z - delta_log_p + log_det_norm
-                log_probs.append(batch_log_prob.cpu().numpy())
+                out[ok] = batch_log_prob.to(out.dtype)
+                log_probs.append(out.cpu().numpy())
 
         self.velocity_model.to("cpu")
         return np.concatenate(log_probs)
