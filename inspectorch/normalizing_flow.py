@@ -220,11 +220,16 @@ class NormalizingFlowBackend(nn.Module):
 
         from tqdm import tqdm
 
-        for i in tqdm(range(0, inputs.shape[0], batch_size), desc="Computing log prob"):
-            batch = inputs[i : i + batch_size].to(
-                next(self.flow_model.parameters()).device
-            )
-            results.append(self.flow_model.log_prob(batch).detach().cpu().numpy())
+        # No autograd: otherwise each batch keeps its graph alive for a
+        # backward pass that never comes.
+        with torch.inference_mode():
+            for i in tqdm(
+                range(0, inputs.shape[0], batch_size), desc="Computing log prob"
+            ):
+                batch = inputs[i : i + batch_size].to(
+                    next(self.flow_model.parameters()).device
+                )
+                results.append(self.flow_model.log_prob(batch).cpu().numpy())
 
         # Move model back to CPU if needed
         self.flow_model.to("cpu")
