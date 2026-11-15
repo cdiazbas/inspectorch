@@ -42,7 +42,7 @@ Inspectorch provides multiple density estimation backends, each with different t
 
 | Backend | Name | Library | Type | Best For |
 | :--- | :--- | :--- | :--- | :--- |
-| `normalizing_flow` | Masked Autoregressive Flow (MAF) | `nflows` | Normalizing Flow | **Fastest inference**, density estimation |
+| `normalizing_flow` | Neural spline flow (rational-quadratic coupling) | `nflows` | Normalizing Flow | **Fastest inference**, density estimation |
 | `flow_matching_ffm` | Flow Matching (Facebook) | Facebook's `flow_matching` | SBI-style (torchdiffeq ODE) | General purpose, balanced approach |
 | `flow_matching_sbi` | Flow Matching | Pure PyTorch | SBI-style (torchdiffeq ODE) | **Fastest training**, research |
 | `flow_matching_cfm` | Conditional Flow Matching | `torchcfm` | TorchCFM API + SBI fallback | Advanced flow matching methods, fast training |
