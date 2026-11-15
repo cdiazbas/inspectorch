@@ -362,6 +362,9 @@ class FlowMatchingCFMBackend(nn.Module):
         from scipy.stats import norm
         from tqdm import tqdm
 
+        if plot_variables is None:
+            plot_variables = [0, 1]
+
         self.velocity_model.eval()
         _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
