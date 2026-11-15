@@ -489,3 +489,39 @@ def diagnostic_rows(train_loader, rel_size):
             break
     rows = torch.cat(rows)[:n_needed]
     return rows, len(rows)
+
+
+# =============================================================================
+def save_checkpoint(model, path, y_mean=None, y_std=None):
+    """
+    Save a model's weights together with the standardisation it was trained in.
+
+    The statistics travel with the weights so that a reloaded model scores
+    new data in its training coordinates (see log_prob_inputs) without the
+    training loader.
+    """
+
+    def cpu(t):
+        return None if t is None else torch.as_tensor(t).detach().cpu().clone()
+
+    torch.save(
+        {"state_dict": model.state_dict(), "y_mean": cpu(y_mean), "y_std": cpu(y_std)},
+        path,
+    )
+
+
+def load_checkpoint(path):
+    """
+    (state_dict, y_mean, y_std) from a file written by save_checkpoint.
+
+    A bare state_dict, as saved before the statistics were stored, is also
+    accepted; y_mean and y_std are then None.
+    """
+    obj = torch.load(path, map_location="cpu", weights_only=True)
+    if (
+        isinstance(obj, dict)
+        and "state_dict" in obj
+        and set(obj) <= {"state_dict", "y_mean", "y_std"}
+    ):
+        return obj["state_dict"], obj.get("y_mean"), obj.get("y_std")
+    return obj, None, None

@@ -204,9 +204,10 @@ class FlowMatchingSBIBackend(nn.Module):
         # Load existing
         if num_epochs == 0 and load_existing and output_model is not None:
             try:
-                self.velocity_model.load_state_dict(
-                    torch.load(output_model, map_location="cpu")
-                )
+                state, y_mean, y_std = utils.load_checkpoint(output_model)
+                self.velocity_model.load_state_dict(state)
+                if y_mean is not None:
+                    self.y_mean, self.y_std = y_mean, y_std
                 print(f"Loaded existing model from {output_model}")
                 return
             except FileNotFoundError:
@@ -273,7 +274,9 @@ class FlowMatchingSBIBackend(nn.Module):
             self.training_loss.append(avg_loss)
 
             if save_model and output_model:
-                torch.save(self.velocity_model.state_dict(), output_model)
+                utils.save_checkpoint(
+                    self.velocity_model, output_model, self.y_mean, self.y_std
+                )
 
         print("Training complete.")
         self.velocity_model.to("cpu")  # Move back to CPU to save memory/state

@@ -327,11 +327,15 @@ class FlowMatchingCFMBackend(nn.Module):
             self.training_loss.append(avg_loss)
 
             if save_model and output_model is not None:
-                torch.save(self.velocity_model.state_dict(), output_model)
+                utils.save_checkpoint(
+                    self.velocity_model, output_model, self.y_mean, self.y_std
+                )
 
         print("Training complete.")
         if save_model and output_model is not None:
-            torch.save(self.velocity_model.state_dict(), output_model)
+            utils.save_checkpoint(
+                self.velocity_model, output_model, self.y_mean, self.y_std
+            )
             print(f"Model saved to {output_model}")
 
     def print_summary(self):

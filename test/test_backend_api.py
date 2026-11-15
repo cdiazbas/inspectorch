@@ -140,6 +140,49 @@ def test_save_model_writes_a_loadable_checkpoint(kind, toy_loader, tmp_path):
     assert torch.load(target, map_location="cpu")
 
 
+@pytest.mark.parametrize(
+    "kind", ["normalizing_flow", "flow_matching_ffm", "flow_matching_sbi"]
+)
+def test_reloaded_model_scores_like_the_trained_one(
+    kind, toy_dataset, toy_loader, tmp_path
+):
+    """
+    A checkpoint carries the training statistics, so a model reloaded without
+    the training loader scores raw rows exactly as the trained one did.
+    """
+    target = tmp_path / "model.pth"
+    kwargs = {} if kind == "normalizing_flow" else dict(solver_method="euler", steps=10)
+    trained = build_estimator(kind)
+    trained.train_flow(
+        toy_loader,
+        learning_rate=1e-3,
+        num_epochs=1,
+        device="cpu",
+        output_model=str(target),
+        save_model=True,
+    )
+    reloaded = build_estimator(kind, seed=1)
+    reloaded.train_flow(
+        None, num_epochs=0, load_existing=True, output_model=str(target), device="cpu"
+    )
+    rows = toy_dataset.patches.clone()
+    np.testing.assert_array_equal(
+        reloaded.log_prob(rows, device="cpu", **kwargs),
+        trained.log_prob(rows, device="cpu", **kwargs),
+    )
+
+
+def test_a_bare_state_dict_checkpoint_still_loads(tmp_path):
+    """Checkpoints written before the statistics were stored keep loading."""
+    from inspectorch.utils import load_checkpoint
+
+    net = torch.nn.Linear(3, 2)
+    torch.save(net.state_dict(), tmp_path / "old.pth")
+    state, y_mean, y_std = load_checkpoint(tmp_path / "old.pth")
+    assert y_mean is None and y_std is None
+    torch.nn.Linear(3, 2).load_state_dict(state)
+
+
 # ----------------------------------------------------------------- outputs
 @pytest.mark.parametrize("kind", ALL_BACKENDS)
 def test_log_prob_returns_one_finite_value_per_sample(kind, toy_dataset, toy_loader):

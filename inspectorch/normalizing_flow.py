@@ -298,7 +298,7 @@ class NormalizingFlowBackend(nn.Module):
             self.y_mean = train_loader.dataset.y_mean
             self.y_std = train_loader.dataset.y_std
 
-        train_flow(
+        info = train_flow(
             self.flow_model,
             train_loader,
             learning_rate,
@@ -313,6 +313,9 @@ class NormalizingFlowBackend(nn.Module):
             if self.y_mean is not None
             else None,
         )
+        # A reloaded checkpoint brings the statistics it was trained with.
+        if isinstance(info, dict) and info.get("y_mean") is not None:
+            self.y_mean, self.y_std = info["y_mean"], info["y_std"]
 
     def plot_train_loss(self, show_plot=False, save_path=None):
         """
@@ -454,11 +457,15 @@ def train_flow(
     # If requested, load existing model and skip training
     if num_epochs == 0 and load_existing and output_model is not None:
         try:
-            original_nflow_model.load_state_dict(
-                torch.load(output_model, map_location="cpu")
-            )
+            state, y_mean_ckpt, y_std_ckpt = iu.load_checkpoint(output_model)
+            original_nflow_model.load_state_dict(state)
             print(f"Loaded existing model from {output_model}")
-            dict_info = {"model": original_nflow_model, "train_loss_avg": []}
+            dict_info = {
+                "model": original_nflow_model,
+                "train_loss_avg": [],
+                "y_mean": y_mean_ckpt,
+                "y_std": y_std_ckpt,
+            }
             return dict_info
         except FileNotFoundError:
             print(f"No existing model found at {output_model}.")
@@ -550,7 +557,7 @@ def train_flow(
 
         # Save intermediate model every epoch:
         if save_model and output_model is not None:
-            torch.save(original_nflow_model.state_dict(), output_model)
+            iu.save_checkpoint(original_nflow_model, output_model, y_mean, y_std)
 
     print(f"Completed training in {(time.time() - time0) / 60.0:2.2f} minutes.")
 
@@ -559,7 +566,7 @@ def train_flow(
 
     # If save_model is True, save the model state:
     if save_model is True and output_model is not None:
-        torch.save(original_nflow_model.state_dict(), output_model)
+        iu.save_checkpoint(original_nflow_model, output_model, y_mean, y_std)
         print(f"Model saved to {output_model}")
 
     return
