@@ -3,6 +3,8 @@
 Compare density estimators for rare-event search on the same data and budget.
 
 Methods (any subset, comma-separated):
+    gaussian    one multivariate Gaussian fitted to the training rows: the floor
+                every density estimator should beat
     nf          normalizing_flow backend (maximum likelihood)
     fm          flow_matching_sbi backend (ODE + trace; --fm-steps, --fm-exact)
     meanflow    fast_flows: average-velocity map, Jacobian log-det
@@ -20,7 +22,7 @@ go to a JSON file with the run conditions.
 
 Example (server):
     python tools/bench_fast_likelihood.py --data example/hinode_data.npz \\
-        --divide 186 --methods nf,fm,meanflow,falcon,f2d2 \\
+        --divide 186 --methods gaussian,nf,fm,meanflow,falcon,f2d2 \\
         --reference fm --epochs 50 --device cuda:0 --out bench.json
 """
 
@@ -97,11 +99,20 @@ def rank_metrics(lp, ref, ks):
 
 
 def recall(lp, idx, ks):
-    order = np.argsort(np.where(np.isfinite(lp), lp, np.inf))
-    return {
+    """
+    recall@k of the injected rows, and their median rank as a percentage of
+    the held-out set (lowest log p = 0 %). Recall saturates when the anomalies
+    are easy; the median rank still separates methods.
+    """
+    order = np.argsort(np.where(np.isfinite(lp), lp, np.inf), kind="stable")
+    rank = np.empty(len(order))
+    rank[order] = np.arange(len(order))
+    out = {
         f"recall@{k}": len(set(order[:k]) & set(idx.tolist())) / min(k, len(idx))
         for k in ks
     }
+    out["median_rank_pct"] = float(np.median(100.0 * rank[idx] / len(order)))
+    return out
 
 
 def timed_log_prob(fn, repeats=1):
@@ -127,7 +138,7 @@ def main():
         default=1.0,
         help="divide the data by this (example: 186)",
     )
-    p.add_argument("--methods", default="nf,fm,meanflow,falcon,f2d2")
+    p.add_argument("--methods", default="gaussian,nf,fm,meanflow,falcon,f2d2")
     p.add_argument(
         "--reference",
         default="fm",
@@ -159,14 +170,15 @@ def main():
     p.add_argument(
         "--inject",
         type=float,
-        default=1e-3,
-        help="fraction of held-out rows turned into anomalies",
+        default=1e-2,
+        help="fraction of held-out rows turned into anomalies (1e-2: 174 on Hinode)",
     )
     p.add_argument(
         "--inject-shift",
         type=int,
-        default=3,
-        help="feature shift of an injected anomaly",
+        default=1,
+        help="feature shift of an injected anomaly; at 3 a plain Gaussian already "
+        "finds every one, so recall cannot rank methods",
     )
     p.add_argument("--ks", default="10,100,1000")
     p.add_argument("--device", default="auto")
@@ -222,7 +234,23 @@ def main():
         print(f"\n=== {m} ===")
         rec = {}
         t0 = time.perf_counter()
-        if m == "nf":
+        if m == "gaussian":
+            ok = torch.isfinite(train.patches).all(1)
+            mu = train.patches[ok].double().mean(0)
+            chol = torch.linalg.cholesky(torch.cov(train.patches[ok].double().T))
+
+            def gauss_lp(x=held_inj, mu=mu, chol=chol):
+                d = x.double() - mu
+                z = torch.cholesky_solve(d.T, chol).T
+                return (
+                    -0.5 * (d * z).sum(1)
+                    - torch.log(torch.diagonal(chol)).sum()
+                    - 0.5 * D * np.log(2 * np.pi)
+                ).numpy()
+
+            est = None
+            evals = {"exact": gauss_lp}
+        elif m == "nf":
             est = DensityEstimator("normalizing_flow")
             est.create_flow(input_size=D, num_layers=5, hidden_features=32, num_bins=8)
             est.train_flow(
@@ -304,6 +332,7 @@ def main():
         rec["final_loss"] = float(
             np.asarray(
                 getattr(getattr(est, "backend", est), "training_loss", [np.nan])
+                or [np.nan]
             )[-1]
         )
         rec["eval"] = {}
@@ -320,7 +349,8 @@ def main():
             print(
                 f"  {name:14s} NLL/dim {rec['eval'][name]['heldout_nll_per_dim']:.4f}  "
                 f"{rec['eval'][name]['rows_per_second']:.0f} rows/s  recall@{ks[-1]} "
-                f"{rec['eval'][name][f'recall@{ks[-1]}']:.2f}"
+                f"{rec['eval'][name][f'recall@{ks[-1]}']:.2f}  median rank "
+                f"{rec['eval'][name]['median_rank_pct']:.2f} %"
             )
         results["methods"][m] = rec
 
