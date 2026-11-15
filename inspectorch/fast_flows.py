@@ -538,7 +538,7 @@ def teacher_pairs(teacher, n, input_size, steps=4, device="cpu", generator=None)
     "reflow" targets of RegFlow, with a few-step teacher instead of a CNF).
     Returns (x0, x1) in standardised units.
     """
-    dev = torch.device(device)
+    dev = torch.device(utils.resolve_device(device, verbose=False).split(",")[0])
     teacher.model.to(dev).eval()
     x0 = torch.randn(n, input_size, generator=generator).to(dev)
     x = x0
