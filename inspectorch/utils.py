@@ -403,10 +403,11 @@ def log_prob_inputs(inputs, dataset_normalization, y_mean, y_std):
         norm_std -- the std the model's input ends up divided by, None if
                     it is not; it feeds normalization_log_det.
 
-    A dataset with normalized_patches() is standardised with its own stats.
-    An object with .patches, a tensor or an ndarray is standardised with the
-    model's training stats (y_mean, y_std), if it has them. In both cases
-    dataset_normalization=False passes the rows through untouched.
+    Every input is standardised with the model's training stats (y_mean,
+    y_std) when the model has them, so a sample gets the same log p whatever
+    else is in the dataset it comes in. A dataset's own stats are used only
+    for a model that has none (never trained). dataset_normalization=False
+    passes the rows through untouched.
     """
     import warnings
 
@@ -420,6 +421,8 @@ def log_prob_inputs(inputs, dataset_normalization, y_mean, y_std):
                 stacklevel=3,
             )
             return inputs.patches, None, None, None
+        if y_mean is not None and y_std is not None and hasattr(inputs, "patches"):
+            return inputs.patches, y_mean, y_std, y_std
         if all(hasattr(inputs, a) for a in ("patches", "y_mean", "y_std")):
             # Standardise batch by batch instead of building a normalised
             # copy of the whole dataset.
