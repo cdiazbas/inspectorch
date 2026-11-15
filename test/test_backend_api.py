@@ -146,6 +146,19 @@ def test_sample_returns_the_requested_shape(kind, toy_loader):
 
 
 @pytest.mark.parametrize("kind", ALL_BACKENDS)
+def test_sample_is_in_the_data_coordinates(kind):
+    """sample() undoes the training standardisation in every backend."""
+    estimator = build_estimator(kind)
+    estimator.backend.y_mean = torch.full((4,), 100.0)
+    estimator.backend.y_std = torch.full((4,), 0.01)
+
+    samples = estimator.sample(500, device="cpu")
+    samples = samples.detach().cpu().numpy() if torch.is_tensor(samples) else samples
+
+    assert abs(float(np.mean(samples)) - 100.0) < 1.0
+
+
+@pytest.mark.parametrize("kind", ALL_BACKENDS)
 def test_print_summary_before_and_after_create(kind, capsys):
     require_backend(kind)
     from inspectorch import DensityEstimator

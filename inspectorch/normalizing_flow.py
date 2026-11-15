@@ -238,13 +238,18 @@ class NormalizingFlowBackend(nn.Module):
 
     def sample(self, num_samples: int, device: str = "cpu") -> torch.Tensor:
         """
-        Samples from the flow model.
+        Samples from the flow model, in the data coordinates: the training
+        standardisation is undone, as in the flow-matching backends.
         """
         self.flow_model.eval()
         _, device = iu.configure_device(self.flow_model, device)
         self.flow_model.to(device)
         with torch.no_grad():
             samples = self.flow_model.sample(num_samples)
+            if self.y_mean is not None and self.y_std is not None:
+                samples = samples * self.y_std.to(samples.device) + self.y_mean.to(
+                    samples.device
+                )
         return samples
 
     def print_summary(self):
