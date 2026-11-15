@@ -389,3 +389,53 @@ def normalization_log_det(y_std, n_features):
     if y_std.numel() == 1:
         return float(-torch.log(y_std).reshape(()).item() * n_features)
     return float(-torch.sum(torch.log(y_std)).item())
+
+
+# =============================================================================
+def log_prob_inputs(inputs, dataset_normalization, y_mean, y_std):
+    """
+    What a backend's log_prob reads from `inputs`, the same for all of them.
+
+    Returns (data, mean, std, norm_std):
+        data     -- float tensor of rows, one per sample;
+        mean/std -- when not None, each batch is standardised as
+                    (x - mean) / std before it reaches the model;
+        norm_std -- the std the model's input ends up divided by, None if
+                    it is not; it feeds normalization_log_det.
+
+    A dataset with normalized_patches() is standardised with its own stats.
+    An object with .patches, a tensor or an ndarray is standardised with the
+    model's training stats (y_mean, y_std), if it has them. In both cases
+    dataset_normalization=False passes the rows through untouched.
+    """
+    import warnings
+
+    if hasattr(inputs, "normalized_patches"):
+        if not dataset_normalization:
+            warnings.warn(
+                "dataset_normalization=False feeds raw patches to a model "
+                "trained on standardised data; log-probs will be "
+                "meaningless unless the input is already standardised.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            return inputs.patches, None, None, None
+        return (
+            inputs.normalized_patches(),
+            None,
+            None,
+            getattr(inputs, "y_std", y_std),
+        )
+
+    if hasattr(inputs, "patches"):
+        data = inputs.patches
+    elif isinstance(inputs, np.ndarray):
+        data = torch.from_numpy(inputs).float()
+    elif isinstance(inputs, torch.Tensor):
+        data = inputs
+    else:
+        raise ValueError(f"Unknown input type: {type(inputs)}")
+
+    if dataset_normalization and y_mean is not None:
+        return data, y_mean, y_std, y_std
+    return data, None, None, None

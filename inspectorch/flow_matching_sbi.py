@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import warnings
 from typing import Optional, List, Union, Tuple
 from tqdm import tqdm
 from . import utils
@@ -366,46 +365,13 @@ class FlowMatchingSBIBackend(nn.Module):
         _, device = utils.configure_device(self, device)
         self.velocity_model.to(device)
 
-        # 1. Handle Inputs (Dataset vs Tensor)
-        # `norm_std` is the std the data fed to the model was divided by, and
-        # stays None when the model sees unstandardised data. It drives the
-        # change-of-variables correction below.
-        norm_std = None
-        if hasattr(inputs, "normalized_patches"):
-            # It's a GeneralizedPatchedDataset or similar
-            if dataset_normalization:
-                data = inputs.normalized_patches()
-                apply_mean_std_adjustment = False
-                norm_std = getattr(inputs, "y_std", self.y_std)
-            else:
-                # Raw patches go to a model trained on standardised data.
-                # Deliberate only if the caller has already standardised.
-                warnings.warn(
-                    "dataset_normalization=False feeds raw patches to a model "
-                    "trained on standardised data; log-probs will be "
-                    "meaningless unless the input is already standardised.",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-                data = inputs.patches
-                apply_mean_std_adjustment = False
-        elif hasattr(inputs, "patches"):
-            data = inputs.patches
-            apply_mean_std_adjustment = dataset_normalization
-        elif isinstance(inputs, (torch.Tensor, np.ndarray)):
-            if isinstance(inputs, np.ndarray):
-                data = torch.from_numpy(inputs).float()
-            else:
-                data = inputs
-            apply_mean_std_adjustment = dataset_normalization
-        else:
-            raise ValueError(f"Unknown input type: {type(inputs)}")
-
-        # 2. Normalize and compute the change-of-variables correction.
-        if apply_mean_std_adjustment and self.y_mean is not None:
-            self.y_mean = self.y_mean.to(device)
-            self.y_std = self.y_std.to(device)
-            norm_std = self.y_std
+        # 1. Inputs, the standardisation each batch needs, and the std the
+        # model's input ends up divided by.
+        data, mean, std, norm_std = utils.log_prob_inputs(
+            inputs, dataset_normalization, self.y_mean, self.y_std
+        )
+        if mean is not None:
+            mean, std = mean.to(device), std.to(device)
 
         # log p(x) = log p(y) - sum(log std). Applied for every path that
         # standardises the data, so the result is a density in the data
@@ -472,11 +438,9 @@ class FlowMatchingSBIBackend(nn.Module):
             for batch in tqdm(loader, desc="Computing log prob"):
                 x_batch = batch[0]
 
-                # Apply normalization if flag is True AND we have stats
-                if apply_mean_std_adjustment and self.y_mean is not None:
-                    x_batch = (x_batch.to(device) - self.y_mean) / self.y_std
-                else:
-                    x_batch = x_batch.to(device)
+                x_batch = x_batch.to(device)
+                if mean is not None:
+                    x_batch = (x_batch - mean) / std
 
                 batch_n = x_batch.shape[0]
                 zeros = torch.zeros(batch_n, device=device)

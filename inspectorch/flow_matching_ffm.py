@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import warnings
 import time
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -493,36 +492,13 @@ class FlowMatchingBackend(nn.Module):
         if steps is not None:
             step_size = 1.0 / steps
 
-        # Get data. `norm_std` is the std the model's input was divided by.
-        apply_mean_std_adjustment = False
-        norm_std = None
-        if hasattr(inputs, "normalized_patches"):
-            if dataset_normalization:
-                data = inputs.normalized_patches()
-                norm_std = getattr(inputs, "y_std", self.y_std)
-            else:
-                warnings.warn(
-                    "dataset_normalization=False feeds raw patches to a model "
-                    "trained on standardised data; log-probs will be "
-                    "meaningless unless the input is already standardised.",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-                data = inputs.patches
-        elif hasattr(inputs, "patches"):
-            data = inputs.patches
-            apply_mean_std_adjustment = dataset_normalization
-        elif isinstance(inputs, (torch.Tensor, np.ndarray)):
-            if isinstance(inputs, np.ndarray):
-                data = torch.from_numpy(inputs).float()
-            else:
-                data = inputs
-            apply_mean_std_adjustment = dataset_normalization
-        else:
-            raise ValueError(f"Unknown input type: {type(inputs)}")
-
-        if apply_mean_std_adjustment and self.y_mean is not None:
-            norm_std = self.y_std
+        # Inputs, the standardisation each batch needs, and the std the
+        # model's input ends up divided by.
+        data, mean, std, norm_std = utils.log_prob_inputs(
+            inputs, dataset_normalization, self.y_mean, self.y_std
+        )
+        if mean is not None:
+            mean, std = mean.to(device), std.to(device)
         # log p(x) = log p(y) - sum(log std); see utils.normalization_log_det.
         log_det_norm = utils.normalization_log_det(norm_std, data.shape[1])
 
@@ -585,17 +561,9 @@ class FlowMatchingBackend(nn.Module):
 
         with torch.no_grad():
             for batch in tqdm(loader, desc="Computing log prob"):
-                x_batch = batch[0]
-
-                # Apply normalization if necessary
-                if apply_mean_std_adjustment and self.y_mean is not None:
-                    # Ensure stats are on device
-                    if self.y_mean.device != device:
-                        self.y_mean = self.y_mean.to(device)
-                        self.y_std = self.y_std.to(device)
-                    x_batch = (x_batch.to(device) - self.y_mean) / self.y_std
-                else:
-                    x_batch = x_batch.to(device)
+                x_batch = batch[0].to(device)
+                if mean is not None:
+                    x_batch = (x_batch - mean) / std
 
                 batch_n = x_batch.shape[0]
                 zeros = torch.zeros(batch_n, device=device)

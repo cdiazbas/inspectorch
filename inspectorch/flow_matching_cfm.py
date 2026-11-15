@@ -601,6 +601,7 @@ class FlowMatchingCFMBackend(nn.Module):
         rtol: float = 1e-5,
         exact_divergence: bool = False,
         steps: int = 100,
+        dataset_normalization: bool = True,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -618,16 +619,11 @@ class FlowMatchingCFMBackend(nn.Module):
         # divided by; it drives the change-of-variables correction so that
         # the result is a density in the data coordinates, matching the
         # other backends. See utils.normalization_log_det.
-        norm_std = None
-        if hasattr(inputs, "normalized_patches"):
-            data = inputs.normalized_patches()
-            norm_std = getattr(inputs, "y_std", self.y_std)
-        elif hasattr(inputs, "patches"):
-            data = inputs.patches
-        elif isinstance(inputs, np.ndarray):
-            data = torch.from_numpy(inputs).float()
-        else:
-            data = inputs
+        data, mean, std, norm_std = utils.log_prob_inputs(
+            inputs, dataset_normalization, self.y_mean, self.y_std
+        )
+        if mean is not None:
+            mean, std = mean.to(device), std.to(device)
 
         log_det_norm = utils.normalization_log_det(norm_std, data.shape[1])
 
@@ -693,6 +689,8 @@ class FlowMatchingCFMBackend(nn.Module):
         with torch.no_grad():
             for batch in tqdm(loader, desc="Computing log prob"):
                 x_batch = batch[0].to(device)
+                if mean is not None:
+                    x_batch = (x_batch - mean) / std
 
                 batch_n = x_batch.shape[0]
                 zeros = torch.zeros(batch_n, device=device)
@@ -734,6 +732,7 @@ class FlowMatchingCFMBackend(nn.Module):
         rtol: float = 1e-5,
         exact_divergence: bool = False,
         steps: int = 100,
+        dataset_normalization: bool = True,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -745,16 +744,11 @@ class FlowMatchingCFMBackend(nn.Module):
         self.velocity_model.to(device)
 
         # Input handling; see _log_prob_naive for `norm_std`.
-        norm_std = None
-        if hasattr(inputs, "normalized_patches"):
-            data = inputs.normalized_patches()
-            norm_std = getattr(inputs, "y_std", self.y_std)
-        elif hasattr(inputs, "patches"):
-            data = inputs.patches
-        elif isinstance(inputs, np.ndarray):
-            data = torch.from_numpy(inputs).float()
-        else:
-            data = inputs
+        data, mean, std, norm_std = utils.log_prob_inputs(
+            inputs, dataset_normalization, self.y_mean, self.y_std
+        )
+        if mean is not None:
+            mean, std = mean.to(device), std.to(device)
 
         log_det_norm = utils.normalization_log_det(norm_std, data.shape[1])
 
@@ -797,6 +791,8 @@ class FlowMatchingCFMBackend(nn.Module):
         with torch.no_grad():
             for batch in tqdm(loader, desc="Computing log prob"):
                 x = batch[0].to(device)
+                if mean is not None:
+                    x = (x - mean) / std
 
                 # Combined state approach (original CFM implementation)
                 class ODEFunc(nn.Module):
