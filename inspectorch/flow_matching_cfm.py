@@ -905,15 +905,16 @@ class FlowMatchingCFMBackend(nn.Module):
         if solver_method in ["euler", "rk4"]:
             options = {"step_size": step_size}
 
-        traj = odeint(
-            func,
-            x0,
-            t_span,
-            method=solver_method,
-            options=options,
-            atol=1e-5,
-            rtol=1e-5,
-        )
+        with torch.no_grad():
+            traj = odeint(
+                func,
+                x0,
+                t_span,
+                method=solver_method,
+                options=options,
+                atol=1e-5,
+                rtol=1e-5,
+            )
 
         x1 = traj[-1]
 
