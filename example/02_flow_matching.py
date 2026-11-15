@@ -155,14 +155,15 @@ log_prob = model.log_prob(
     dataset_normalization=True,
     batch_size=1000,
     device=args.device,
-    # Fixed-step 'euler' is a good speed/accuracy trade-off, but the step
-    # count matters: ~100 steps keeps the density within ~0.5% of correct,
-    # 10 steps is too coarse. 'dopri5' is adaptive and more accurate, but
-    # markedly slower.
-    solver_method="euler",  # Options: 'dopri5', 'rk4', 'euler', 'midpoint'
+    # Adaptive 'dopri5' with the exact divergence: deterministic and within
+    # ~0.005 nats of a tight reference on this example. Fixed-step 'euler' at
+    # 100 steps is off by ~0.7 +/- 0.4 nats. The Hutchinson estimator
+    # (exact_divergence=False) is noisy (~2 nats per spectrum here) and, with
+    # an adaptive solver, very slow; keep it for high dimensions only.
+    solver_method="dopri5",  # Options: 'dopri5', 'rk4', 'euler', 'midpoint'
     atol=1e-5,
     rtol=1e-5,
-    exact_divergence=False,  # Use Hutchinson estimator for speed (True = exact but slower)
+    exact_divergence=True,
 )
 
 
