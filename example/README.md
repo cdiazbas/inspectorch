@@ -15,5 +15,9 @@ Once you are comfortable with the normalizing flow example, you can explore the 
 - `02_flow_matching.py` & `02_flow_matching.ipynb`: Same workflow as above, but using Flow Matching (Facebook's `flow_matching`) for density estimation.
 - `03_flow_matching_cfm.ipynb`: Same example, but using the `torchcfm` API.
 
+## Experimental: few-step flow maps
+
+- `04_fast_likelihood.ipynb`: Same example with FALCON, a few-step flow map from `inspectorch.fast_flows` that trains like flow matching and evaluates the density in a handful of steps. `tools/bench_fast_likelihood.py` compares it with the other methods on the same data. Its outputs are not stored: run it on a GPU.
+
 ## Usage
 You can run the Python scripts directly or open the Jupyter notebooks to interactively explore how Inspectorch processes the data, trains the models, and identifies rare events.
