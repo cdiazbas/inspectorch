@@ -395,10 +395,10 @@ class FlowMatchingSBIBackend(nn.Module):
 
             if step_size is not None:
                 computed_steps = int(1.0 / step_size)
-                t_span = torch.linspace(1, 0, computed_steps, device=device)
+                t_span = utils.fixed_time_grid(computed_steps, device)
             else:
                 # Fallback to 'steps' argument
-                t_span = torch.linspace(1, 0, steps, device=device)
+                t_span = utils.fixed_time_grid(steps, device)
 
         class ODEFuncLogProb(nn.Module):
             def __init__(self, net, context):
@@ -541,7 +541,7 @@ class FlowMatchingSBIBackend(nn.Module):
         # Backward integration: 1 -> 0
         t_span = torch.tensor([1.0, 0.0], device=device)
         if method in ["euler", "rk4"]:
-            t_span = torch.linspace(1, 0, steps, device=device)
+            t_span = utils.fixed_time_grid(steps, device)
 
         class ODEFuncBackward(nn.Module):
             def __init__(self, net, context):

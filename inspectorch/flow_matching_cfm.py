@@ -648,7 +648,7 @@ class FlowMatchingCFMBackend(nn.Module):
             # Safest: compute steps from step_size
 
             computed_steps = int(1.0 / step_size)
-            t_span = torch.linspace(1, 0, computed_steps, device=device)
+            t_span = utils.fixed_time_grid(computed_steps, device)
 
         # ODE function matching SBI exactly
         class ODEFuncLogProb(nn.Module):
@@ -772,12 +772,12 @@ class FlowMatchingCFMBackend(nn.Module):
             # Simple priority:
             if "step_size" in kwargs:  # Explicit kwarg
                 computed_steps = int(1.0 / kwargs["step_size"])
-                t_span = torch.linspace(1, 0, computed_steps, device=device)
+                t_span = utils.fixed_time_grid(computed_steps, device)
             elif (
                 step_size != 0.1
             ):  # Explicit arg? (hard to tell if default, assume used if changed)
                 computed_steps = int(1.0 / step_size)
-                t_span = torch.linspace(1, 0, computed_steps, device=device)
+                t_span = utils.fixed_time_grid(computed_steps, device)
             else:
                 # Default behavior or steps arg
                 # But wait, we want to match flow_matching.py behavior which is 10 steps for 0.1
@@ -786,7 +786,7 @@ class FlowMatchingCFMBackend(nn.Module):
 
                 # Let's standardize: Calculate steps from step_size ALWAYS
                 computed_steps = int(1.0 / step_size)
-                t_span = torch.linspace(1, 0, computed_steps, device=device)
+                t_span = utils.fixed_time_grid(computed_steps, device)
 
         with torch.no_grad():
             for batch in tqdm(loader, desc="Computing log prob"):

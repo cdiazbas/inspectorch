@@ -520,7 +520,7 @@ class FlowMatchingBackend(nn.Module):
         # We will use common logic:
         if solver_method in ["euler", "rk4", "midpoint"] or steps is not None:
             num_steps = int(1.0 / step_size) if steps is None else steps
-            t_span = torch.linspace(1, 0, num_steps, device=device)
+            t_span = utils.fixed_time_grid(num_steps, device)
 
         # Define fused ODE function (Divergence + Velocity)
         class ODEFuncLogProb(nn.Module):

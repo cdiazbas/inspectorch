@@ -443,3 +443,15 @@ def log_prob_inputs(inputs, dataset_normalization, y_mean, y_std):
     if dataset_normalization and y_mean is not None:
         return data, y_mean, y_std, y_std
     return data, None, None, None
+
+
+# =============================================================================
+def fixed_time_grid(n_steps, device="cpu"):
+    """
+    Times from 1 (data) to 0 (noise) for a fixed-step ODE solver: n_steps
+    equal steps, hence n_steps + 1 points.
+    """
+    n_steps = int(n_steps)
+    if n_steps < 1:
+        raise ValueError(f"A fixed-step solver needs at least one step, got {n_steps}")
+    return torch.linspace(1, 0, n_steps + 1, device=device)
