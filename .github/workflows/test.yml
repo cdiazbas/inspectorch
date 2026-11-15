@@ -1,9 +1,9 @@
 name: tests
 
+# Automatic runs are off: start the workflow by hand from the Actions tab.
+# To turn them back on, add `push: {branches: [main]}` and `pull_request:`.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   # What must never be published: absolute paths of a personal machine,
