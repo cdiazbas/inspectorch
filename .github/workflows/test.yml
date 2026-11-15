@@ -6,6 +6,43 @@ on:
   pull_request:
 
 jobs:
+  # What must never be published: absolute paths of a personal machine,
+  # audit working files, and assistant attribution anywhere in history.
+  # The patterns are assembled at run time so that this file does not
+  # match itself.
+  publication-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: No absolute home paths in tracked files
+        run: |
+          if git grep -n "/""Users/"; then
+            echo "::error::absolute home path in a tracked file"
+            exit 1
+          fi
+
+      - name: No audit working files tracked
+        run: |
+          if git ls-files | grep -iE "(^|/)audits?/|audit[^/]*\.md$|_verify\.py$"; then
+            echo "::error::audit working files must stay untracked"
+            exit 1
+          fi
+
+      - name: No assistant attribution in history
+        run: |
+          pattern="$(echo Y2xhdWRlfGFudGhyb3BpY3xjby1hdXRob3JlZA== | base64 -d)"
+          if git log --format=%B | grep -inE "$pattern"; then
+            echo "::error::attribution in a commit message"
+            exit 1
+          fi
+          if git log -p --format= | grep -inE "$pattern"; then
+            echo "::error::attribution in a committed file"
+            exit 1
+          fi
+
   test:
     runs-on: ubuntu-latest
     strategy:
