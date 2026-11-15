@@ -21,7 +21,8 @@ Clone the repository and install the required dependencies (automatically with p
 ```bash
 git clone git@github.com:cdiazbas/inspectorch.git
 cd inspectorch
-pip install .
+pip install .                    # normalizing flow
+pip install ".[flow-matching]"   # also the flow-matching backends
 ```
 
 
@@ -104,7 +105,7 @@ If you use Inspectorch in your research, please cite the corresponding paper:
 ```bash
 git clone git@github.com:cdiazbas/inspectorch.git
 cd inspectorch
-pip install -e .
+pip install -e ".[dev,flow-matching]"
 ```
 
 Run `pre-commit install` to install the pre-commit hooks. Run `pre-commit run --all-files` to check all files.
